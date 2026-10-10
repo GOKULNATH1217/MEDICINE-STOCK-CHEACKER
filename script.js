@@ -1164,7 +1164,13 @@ function showToast(message, type = 'info') {
     setTimeout(() => {
         toast.style.opacity = '0';
         toast.style.transform = 'translateX(100%)';
-        setTimeout(() => toast.remove(), 300);
+        setTimeout(() => {
+            if (typeof toast.remove === 'function') {
+                toast.remove();
+            } else if (toast.parentNode) {
+                toast.parentNode.removeChild(toast);
+            }
+        }, 300);
     }, 4000);
 }
 
