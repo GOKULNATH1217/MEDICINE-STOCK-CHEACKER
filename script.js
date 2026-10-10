@@ -86,6 +86,146 @@ let isSimpleModeActive = false;
 let selectedVoiceLanguage = 'ta-IN';
 let activeSpeechRecognition = null;
 
+let currentLanguage = localStorage.getItem('medicare_site_lang') || 'en';
+let currentTheme = localStorage.getItem('medicare_theme') || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+
+// Centralized Translation Dictionary (English & Tamil)
+const i18n = {
+    en: {
+        app_title: "MEDI-CARE",
+        app_subtitle: "PHC Medicine Stock-Out Early Warning & Redistribution Engine",
+        policy_notice: "Operational Policy: Inter-PHC stock redistribution requires Medical Officer PIN verification. Count days before ordering district stock.",
+        network_online: "Online (Synced)",
+        network_offline: "Offline Mode (Local Storage)",
+        voice_off: "Voice: OFF",
+        voice_on: "Voice: ON",
+        simple_mode_on: "Switch to Standard View",
+        simple_mode_off: "Guided Simple Mode",
+        theme_light: "Light Mode",
+        theme_dark: "Dark Mode",
+        settings: "Settings",
+        add_update_stock: "Add / Update Stock",
+        choice_subtitle: "Select how you want to add medicine stock to the inventory:",
+        btn_scan_barcode: "Scan Barcode (பார்கோடு)",
+        choice_scan_sub: "Use live camera to scan medicine GTIN barcode",
+        btn_enter_manually: "Enter Manually (கைமுறையாக)",
+        choice_manual_sub: "Fill out physical stock form or 3-step wizard",
+        settings_title: "System Settings & Data Tools",
+        settings_desc: "Configure application parameters or load demonstration datasets for evaluation.",
+        demo_data_heading: "Demonstration Benchmark Dataset",
+        demo_data_desc: "Load the official 24-hour hackathon benchmark dataset featuring Centre A shortage (60 stock, 6 days remaining) and Centre C safe surplus (140 transfer capacity).",
+        btn_load_demo_confirm: "Load Demo Scenario Data",
+        btn_reset_storage: "Clear Local Storage & Reset",
+        btn_cancel: "Cancel",
+        btn_confirm: "Confirm",
+        voice_help_text: "Speak medicine names or quantities in Tamil or English to fill stock entries hands-free with mandatory confirmation.",
+        btn_start_voice: "Start Speaking (பேசுக)",
+        btn_stop_voice: "Stop",
+        btn_replay_voice: "Repeat Guidance",
+        toast_demo_loaded: "Demo scenario data loaded successfully.",
+        toast_stock_saved: "Stock entry saved successfully!",
+        toast_transfer_requested: "Transfer request submitted for approval.",
+        toast_transfer_approved: "Transfer approved and executed successfully!",
+        toast_transfer_rejected: "Transfer request rejected.",
+        toast_camera_stopped: "Camera stopped."
+    },
+    ta: {
+        app_title: "MEDI-CARE (மேடி-கேர்)",
+        app_subtitle: "ஆரம்ப சுகாதார நிலைய மருந்து பற்றாக்குறை எச்சரிக்கை மற்றும் மறுபகிர்வு முறைமை",
+        policy_notice: "செயல்பாட்டு விதி: PHC இடையே மருந்து மாற்றம் செய்ய மருத்துவ அலுவலரின் PIN சரிபார்ப்பு தேவை. மாவட்ட ஆர்டருக்கு முன் நாட்களை கணக்கிடுங்கள்.",
+        network_online: "ஆன்லைன் (இணைக்கப்பட்டது)",
+        network_offline: "ஆஃப்லைன் முறைமை (உள்ளூர் சேமிப்பு)",
+        voice_off: "குரல் உதவி: முடக்கப்பட்டது",
+        voice_on: "குரல் உதவி: இயக்கப்பட்டது",
+        simple_mode_on: "சாதாரண பார்வைக்கு மாறுக",
+        simple_mode_off: "எளிய வழிகாட்டல் முறைமை",
+        theme_light: "வெளிச்ச முறைமை (Light)",
+        theme_dark: "இருண்ட முறைமை (Dark)",
+        settings: "அமைப்புகள்",
+        add_update_stock: "மருந்து இருப்பு சேர்க்க / புதுப்பிக்க",
+        choice_subtitle: "மருந்து இருப்பு சேர்க்கும் முறையைத் தேர்ந்தெடுக்கவும்:",
+        btn_scan_barcode: "பார்கோடு ஸ்கேன் செய்ய",
+        choice_scan_sub: "கேமராவைப் பயன்படுத்தி பார்கோடு ஸ்கேன் செய்க",
+        btn_enter_manually: "கைமுறையாக உள்ளிட",
+        choice_manual_sub: "படிவம் மூலம் மருந்து விவரங்களை உள்ளிடுக",
+        settings_title: "முறைமை அமைப்புகள் & தரவு கருவிகள்",
+        settings_desc: "செயலி அமைப்புகளை மாற்றவும் அல்லது சோதனை தரவை ஏற்றவும்.",
+        demo_data_heading: "சோதனை தரவு & காட்சிகள்",
+        demo_data_desc: "சென்டர் A பற்றாக்குறை மற்றும் சென்டர் C மேலதிக இருப்பைக் கொண்ட ஹேக்கத்தான் மாதிரி தரவை ஏற்றவும்.",
+        btn_load_demo_confirm: "மாதிரி காட்சி தரவை ஏற்றுக",
+        btn_reset_storage: "உள்ளூர் நினைவகத்தை அழித்து மீட்டமைக்கவும்",
+        btn_cancel: "ரத்து செய்",
+        btn_confirm: "உறுதி செய்",
+        voice_help_text: "மருந்து பெயர்கள் அல்லது எண்ணிக்கையை தமிழ் அல்லது ஆங்கிலத்தில் கூறி இருப்பை உள்ளிடுக. இறுதி உறுதிப்படுத்தல் கட்டாயமாகும்.",
+        btn_start_voice: "பேசத் தொடங்கு (பேசுக)",
+        btn_stop_voice: "நிறுத்து",
+        btn_replay_voice: "மீண்டும் கேள்",
+        toast_demo_loaded: "மாதிரி தரவு வெற்றிகரமாக ஏற்றப்பட்டது.",
+        toast_stock_saved: "மருந்து இருப்பு வெற்றிகரமாக சேமிக்கப்பட்டது!",
+        toast_transfer_requested: "மருந்து மாற்றக் கோரிக்கை சமர்ப்பிக்கப்பட்டது.",
+        toast_transfer_approved: "மருந்து மாற்றம் ஒப்புதல் அளிக்கப்பட்டு செயல்படுத்தப்பட்டது!",
+        toast_transfer_rejected: "மருந்து மாற்றக் கோரிக்கை நிராகரிக்கப்பட்டது.",
+        toast_camera_stopped: "கேமரா நிறுத்தப்பட்டது."
+    }
+};
+
+function t(key) {
+    if (i18n[currentLanguage] && i18n[currentLanguage][key]) {
+        return i18n[currentLanguage][key];
+    }
+    if (i18n['en'] && i18n['en'][key]) {
+        return i18n['en'][key];
+    }
+    return key;
+}
+
+function setLanguage(lang) {
+    if (lang !== 'en' && lang !== 'ta') lang = 'en';
+    currentLanguage = lang;
+    localStorage.setItem('medicare_site_lang', lang);
+
+    const selSiteLang = document.getElementById('select-site-lang');
+    if (selSiteLang) selSiteLang.value = lang;
+
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+        const k = el.getAttribute('data-i18n');
+        if (k && i18n[lang] && i18n[lang][k]) {
+            if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+                el.placeholder = i18n[lang][k];
+            } else {
+                el.innerHTML = i18n[lang][k];
+            }
+        }
+    });
+
+    setTheme(currentTheme);
+}
+
+function setTheme(theme) {
+    if (theme !== 'dark' && theme !== 'light') theme = 'light';
+    currentTheme = theme;
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('medicare_theme', theme);
+
+    const lblTheme = document.getElementById('lbl-theme');
+    const btnTheme = document.getElementById('btn-toggle-theme');
+    if (lblTheme) {
+        lblTheme.textContent = theme === 'dark' 
+            ? (currentLanguage === 'ta' ? 'வெளிச்ச முறைமை' : 'Light Mode')
+            : (currentLanguage === 'ta' ? 'இருண்ட முறைமை' : 'Dark Mode');
+    }
+    if (btnTheme && typeof btnTheme.querySelector === 'function') {
+        const icon = btnTheme.querySelector('i');
+        if (icon) {
+            icon.className = theme === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
+        }
+    }
+}
+
+function toggleTheme() {
+    setTheme(currentTheme === 'dark' ? 'light' : 'dark');
+}
+
 // Symmetric Distance Matrix (km)
 const distanceMatrix = {
     'Centre A': { 'Centre A': 0, 'Centre B': 15, 'Centre C': 9, 'Centre D': 22 },
@@ -815,7 +955,7 @@ function startVoiceRecognition(onResultCallback) {
 
     const btnStart = document.getElementById('btn-start-voice');
     const btnStop = document.getElementById('btn-stop-voice');
-    const transcriptBox = document.getElementById('voice-transcript-display');
+    const transcriptBox = document.getElementById('voice-transcript-box');
 
     if (btnStart) btnStart.style.display = 'none';
     if (btnStop) btnStop.style.display = 'inline-flex';
@@ -1805,6 +1945,10 @@ function closeRejectModal() {
     activePendingRequestToReject = null;
 }
 
+function loadDemoData() {
+    loadDemoScenario();
+}
+
 /**
  * DEMO SCENARIO LOADER (Benchmark Benchmark)
  */
@@ -1986,10 +2130,108 @@ document.addEventListener('DOMContentLoaded', () => {
     renderDashboard();
     updateNetworkStatus();
 
+    setLanguage(currentLanguage);
+    setTheme(currentTheme);
+
     window.addEventListener('online', updateNetworkStatus);
     window.addEventListener('offline', updateNetworkStatus);
 
-    // Language Selector Listener
+    // Site Language Selector (English / Tamil)
+    const selectSiteLang = document.getElementById('select-site-lang');
+    if (selectSiteLang) {
+        selectSiteLang.value = currentLanguage;
+        selectSiteLang.addEventListener('change', (e) => {
+            setLanguage(e.target.value);
+            showToast(currentLanguage === 'ta' ? 'இணைதள மொழி தமிழுக்கு மாற்றப்பட்டது.' : 'Website language updated to English.', 'info');
+        });
+    }
+
+    // Theme Toggle Button (Light / Dark)
+    const btnToggleTheme = document.getElementById('btn-toggle-theme');
+    if (btnToggleTheme) {
+        btnToggleTheme.addEventListener('click', () => {
+            toggleTheme();
+            showToast(currentTheme === 'dark' ? '🌙 Dark Mode Activated.' : '☀️ Light Mode Activated.', 'info');
+        });
+    }
+
+    // Settings Modal Handlers
+    const modalSettings = document.getElementById('modal-settings');
+    const btnOpenSettings = document.getElementById('btn-open-settings');
+    if (btnOpenSettings && modalSettings) {
+        btnOpenSettings.addEventListener('click', () => modalSettings.classList.add('open'));
+    }
+    ['btn-close-settings-modal', 'btn-cancel-settings'].forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn && modalSettings) {
+            btn.addEventListener('click', () => modalSettings.classList.remove('open'));
+        }
+    });
+
+    const btnLoadDemoModal = document.getElementById('btn-load-demo-modal');
+    if (btnLoadDemoModal) {
+        btnLoadDemoModal.addEventListener('click', () => {
+            loadDemoData();
+            if (modalSettings) modalSettings.classList.remove('open');
+            showToast(t('toast_demo_loaded'), 'success');
+        });
+    }
+
+    const btnResetModal = document.getElementById('btn-reset-modal');
+    if (btnResetModal) {
+        btnResetModal.addEventListener('click', () => {
+            showConfirmModal(
+                'Reset All Data',
+                'Are you sure you want to clear local storage and reset all inventory state?',
+                () => {
+                    resetAllData();
+                    if (modalSettings) modalSettings.classList.remove('open');
+                }
+            );
+        });
+    }
+
+    // Legacy Header Demo/Reset Button Listeners (for automated test compatibility)
+    const btnDemoHeader = document.getElementById('btn-demo');
+    if (btnDemoHeader) {
+        btnDemoHeader.addEventListener('click', loadDemoData);
+    }
+    const btnResetHeader = document.getElementById('btn-reset');
+    if (btnResetHeader) {
+        btnResetHeader.addEventListener('click', () => {
+            showConfirmModal('Reset All Data', 'Are you sure you want to reset all inventory data?', resetAllData);
+        });
+    }
+
+    // Add Stock Method Choice Modal Handlers
+    const modalChoice = document.getElementById('modal-add-stock-choice');
+    const btnCloseChoice = document.getElementById('btn-close-choice-modal');
+    if (btnCloseChoice && modalChoice) {
+        btnCloseChoice.addEventListener('click', () => modalChoice.classList.remove('open'));
+    }
+
+    const btnChoiceScan = document.getElementById('btn-choice-scan');
+    if (btnChoiceScan && modalChoice) {
+        btnChoiceScan.addEventListener('click', () => {
+            modalChoice.classList.remove('open');
+            document.getElementById('modal-barcode-scanner').classList.add('open');
+            startCameraScanner();
+        });
+    }
+
+    const btnChoiceManual = document.getElementById('btn-choice-manual');
+    if (btnChoiceManual && modalChoice) {
+        btnChoiceManual.addEventListener('click', () => {
+            modalChoice.classList.remove('open');
+            const modalStock = document.getElementById('modal-stock');
+            if (modalStock) {
+                modalStock.classList.add('open');
+                document.getElementById('modal-last-updated').value = toLocalISO(new Date());
+            }
+        });
+    }
+
+    // Voice Language Selector Listener
     const langSelect = document.getElementById('select-voice-lang');
     if (langSelect) {
         langSelect.addEventListener('change', (e) => {
@@ -2010,63 +2252,140 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast(isSimpleModeActive ? '✨ Switched to Guided Simple Operating Mode (எளிய முறை).' : '📊 Switched to Detailed Operational Dashboard.', 'info');
     });
 
-    // Voice Assistant Controls
-    document.getElementById('btn-toggle-voice').addEventListener('click', () => {
-        voiceAssistantEnabled = !voiceAssistantEnabled;
-        const lbl = document.getElementById('lbl-voice');
-        if (lbl) lbl.textContent = voiceAssistantEnabled ? `Voice Assistant: ON (${selectedVoiceLanguage === 'ta-IN' ? 'தமிழ்' : 'Eng'})` : 'Voice Assistant: OFF';
+    // Voice Assistant Controls for Unified Voice Card
+    let pendingVoiceAction = null;
 
-        if (voiceAssistantEnabled) {
-            speakText(selectedVoiceLanguage === 'ta-IN' ? 'வணக்கம். மேடி-கேர் குரல் உதவி இயக்கப்பட்டது.' : 'Hello. Medi-Care voice assistant activated.', selectedVoiceLanguage);
-            showToast('🔊 Voice Assistant ON: Spoken responses active.', 'success');
-        } else {
-            stopSpeaking();
-            showToast('Voice Assistant OFF.', 'info');
+    function updateVoiceStatus(statusText, badgeClass = 'badge-pending') {
+        const badge = document.getElementById('voice-status-indicator');
+        if (badge) {
+            badge.textContent = statusText;
+            badge.className = `badge ${badgeClass}`;
         }
-    });
+    }
+
+    const btnToggleVoice = document.getElementById('btn-toggle-voice');
+    if (btnToggleVoice) {
+        btnToggleVoice.addEventListener('click', () => {
+            voiceAssistantEnabled = !voiceAssistantEnabled;
+            const lbl = document.getElementById('lbl-voice');
+            if (lbl) lbl.textContent = voiceAssistantEnabled ? `Voice: ON (${selectedVoiceLanguage === 'ta-IN' ? 'தமிழ்' : 'Eng'})` : 'Voice: OFF';
+
+            if (voiceAssistantEnabled) {
+                updateVoiceStatus(selectedVoiceLanguage === 'ta-IN' ? 'தயாராக உள்ளது' : 'Ready', 'badge-safe');
+                speakText(selectedVoiceLanguage === 'ta-IN' ? 'வணக்கம். மேடி-கேர் குரல் உதவி இயக்கப்பட்டது.' : 'Hello. Medi-Care voice assistant activated.', selectedVoiceLanguage);
+                showToast('🔊 Voice Assistant ON: Spoken guidance active.', 'success');
+            } else {
+                stopVoiceRecognition();
+                stopSpeaking();
+                updateVoiceStatus(selectedVoiceLanguage === 'ta-IN' ? 'முடக்கப்பட்டது' : 'Disabled', 'badge-expired');
+                const transcriptBox = document.getElementById('voice-transcript-box');
+                if (transcriptBox) transcriptBox.style.display = 'none';
+                showToast('Voice Assistant OFF.', 'info');
+            }
+        });
+    }
 
     const btnStartVoice = document.getElementById('btn-start-voice');
+    const btnStopVoice = document.getElementById('btn-stop-voice');
+
     if (btnStartVoice) {
         btnStartVoice.addEventListener('click', () => {
+            if (!voiceAssistantEnabled) {
+                voiceAssistantEnabled = true;
+                const lbl = document.getElementById('lbl-voice');
+                if (lbl) lbl.textContent = `Voice: ON (${selectedVoiceLanguage === 'ta-IN' ? 'தமிழ்' : 'Eng'})`;
+            }
+
+            updateVoiceStatus(selectedVoiceLanguage === 'ta-IN' ? 'கவனிக்கிறது...' : 'Listening...', 'badge-warning');
+            if (btnStopVoice) btnStopVoice.style.display = 'inline-flex';
+            btnStartVoice.style.display = 'none';
+
             startVoiceRecognition((transcript) => {
+                if (btnStopVoice) btnStopVoice.style.display = 'none';
+                btnStartVoice.style.display = 'inline-flex';
+                updateVoiceStatus(selectedVoiceLanguage === 'ta-IN' ? 'செயல்முறை...' : 'Processing...', 'badge-pending');
+
+                const transcriptBox = document.getElementById('voice-transcript-box');
+                const transcriptText = document.getElementById('voice-transcript-text');
+                if (transcriptBox && transcriptText) {
+                    transcriptText.textContent = `"${transcript}"`;
+                    transcriptBox.style.display = 'block';
+                }
+
                 const num = parseSpokenNumber(transcript, selectedVoiceLanguage);
                 if (num !== null) {
-                    const qtyEl = document.getElementById('wizard-qty');
-                    if (qtyEl) qtyEl.value = num;
-                    showToast(`Voice recognized quantity: ${num} units`, 'success');
-                    speakText(`Quantity set to ${num} units. Please confirm to save.`, selectedVoiceLanguage);
+                    pendingVoiceAction = { type: 'QTY', value: num, text: transcript };
+                    speakText(selectedVoiceLanguage === 'ta-IN' ? `${num} அலகுகள் அடையாளம் காணப்பட்டது. உறுதி செய்யவா?` : `Recognized quantity ${num} units. Click Confirm to apply.`, selectedVoiceLanguage);
                 } else {
                     const meds = Array.from(new Set(inventoryState.map(i => i.medicineName)));
-                    const matched = meds.find(m => m.toLowerCase().includes(transcript.toLowerCase()));
+                    const matched = meds.find(m => m.toLowerCase().includes(transcript.toLowerCase())) ||
+                                    Object.values(barcodeCatalogue).map(b => b.medicineName).find(m => m.toLowerCase().includes(transcript.toLowerCase()));
+
                     if (matched) {
-                        document.getElementById('wizard-medicine').value = matched;
-                        showToast(`Voice matched medicine: ${matched}`, 'success');
-                        speakText(`Selected medicine ${matched}.`, selectedVoiceLanguage);
+                        pendingVoiceAction = { type: 'MEDICINE', value: matched, text: transcript };
+                        speakText(selectedVoiceLanguage === 'ta-IN' ? `${matched} தேர்வு செய்யப்பட்டது. உறுதி செய்யவா?` : `Recognized medicine ${matched}. Click Confirm to apply.`, selectedVoiceLanguage);
+                    } else {
+                        pendingVoiceAction = { type: 'TEXT', value: transcript, text: transcript };
+                        speakText(selectedVoiceLanguage === 'ta-IN' ? `சொல்: ${transcript}. உறுதி செய்யவா?` : `Recognized: ${transcript}. Click Confirm to apply.`, selectedVoiceLanguage);
                     }
                 }
+                updateVoiceStatus(selectedVoiceLanguage === 'ta-IN' ? 'தயாராக உள்ளது' : 'Ready', 'badge-safe');
             });
         });
     }
 
-    const btnStopVoice = document.getElementById('btn-stop-voice');
     if (btnStopVoice) {
-        btnStopVoice.addEventListener('click', stopVoiceRecognition);
+        btnStopVoice.addEventListener('click', () => {
+            stopVoiceRecognition();
+            stopSpeaking();
+            if (btnStartVoice) btnStartVoice.style.display = 'inline-flex';
+            btnStopVoice.style.display = 'none';
+            updateVoiceStatus(selectedVoiceLanguage === 'ta-IN' ? 'தயாராக உள்ளது' : 'Ready', 'badge-safe');
+            showToast('Voice listening stopped.', 'info');
+        });
+    }
+
+    const btnVoiceConfirm = document.getElementById('btn-voice-confirm');
+    if (btnVoiceConfirm) {
+        btnVoiceConfirm.addEventListener('click', () => {
+            if (!pendingVoiceAction) {
+                showToast('No pending voice input to confirm.', 'info');
+                return;
+            }
+
+            if (pendingVoiceAction.type === 'QTY') {
+                const qtyInput = document.getElementById('wizard-qty') || document.getElementById('modal-stock-qty');
+                if (qtyInput) qtyInput.value = pendingVoiceAction.value;
+                showToast(`Applied voice quantity: ${pendingVoiceAction.value} units`, 'success');
+                speakText(selectedVoiceLanguage === 'ta-IN' ? `${pendingVoiceAction.value} அலகுகள் சேர்க்கப்பட்டது.` : `Applied quantity ${pendingVoiceAction.value} units.`, selectedVoiceLanguage);
+            } else if (pendingVoiceAction.type === 'MEDICINE') {
+                const medSelect = document.getElementById('wizard-medicine') || document.getElementById('modal-medicine');
+                if (medSelect) medSelect.value = pendingVoiceAction.value;
+                showToast(`Applied voice medicine: ${pendingVoiceAction.value}`, 'success');
+                speakText(selectedVoiceLanguage === 'ta-IN' ? `${pendingVoiceAction.value} தேர்ந்தெடுக்கப்பட்டது.` : `Selected medicine ${pendingVoiceAction.value}.`, selectedVoiceLanguage);
+            }
+
+            const transcriptBox = document.getElementById('voice-transcript-box');
+            if (transcriptBox) transcriptBox.style.display = 'none';
+            pendingVoiceAction = null;
+        });
+    }
+
+    const btnVoiceCancel = document.getElementById('btn-voice-cancel');
+    if (btnVoiceCancel) {
+        btnVoiceCancel.addEventListener('click', () => {
+            pendingVoiceAction = null;
+            const transcriptBox = document.getElementById('voice-transcript-box');
+            if (transcriptBox) transcriptBox.style.display = 'none';
+            showToast('Voice action cancelled.', 'info');
+        });
     }
 
     const btnReplayVoice = document.getElementById('btn-replay-voice');
     if (btnReplayVoice) {
         btnReplayVoice.addEventListener('click', () => {
             if (lastSpokenText) speakText(lastSpokenText, selectedVoiceLanguage);
-            else speakText('Welcome to Medi-Care medicine operations.', selectedVoiceLanguage);
-        });
-    }
-
-    const btnVoiceManual = document.getElementById('btn-voice-manual');
-    if (btnVoiceManual) {
-        btnVoiceManual.addEventListener('click', () => {
-            stopVoiceRecognition();
-            stopSpeaking();
-            showToast('Switched to manual entry mode.', 'info');
+            else speakText(selectedVoiceLanguage === 'ta-IN' ? 'மேடி-கேர் குரல் உதவிக்கு நல்வரவு.' : 'Welcome to Medi-Care voice guidance.', selectedVoiceLanguage);
         });
     }
 
@@ -2449,10 +2768,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnOpenStockModal = document.getElementById('btn-add-modal');
     const formStock = document.getElementById('form-stock');
 
-    btnOpenStockModal.addEventListener('click', () => {
-        modalStock.classList.add('open');
-        document.getElementById('modal-last-updated').value = toLocalISO(new Date());
-    });
+    if (btnOpenStockModal) {
+        btnOpenStockModal.addEventListener('click', () => {
+            const choiceModal = document.getElementById('modal-add-stock-choice');
+            if (choiceModal) {
+                choiceModal.classList.add('open');
+            } else if (modalStock) {
+                modalStock.classList.add('open');
+                document.getElementById('modal-last-updated').value = toLocalISO(new Date());
+            }
+        });
+    }
 
     document.querySelectorAll('#modal-stock .btn-close-modal').forEach(btn => {
         btn.addEventListener('click', () => {
