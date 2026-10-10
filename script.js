@@ -1226,7 +1226,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('filter-urgency').addEventListener('change', renderDashboard);
 
     document.getElementById('btn-demo').addEventListener('click', () => {
-        showConfirmModal('Load Benchmark Demo Scenario', 'Do you want to load the 24-hour hackathon benchmark demo scenario?', () => {
+        showConfirmModal('Load Demo Data', 'Do you want to load demo data?', () => {
             loadDemoScenario();
         });
     });
