@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Early Warning System for PHC Medicine Stock-Outs, Safe Redistribution Engine, Batch Expiry Tracking, and Supply Simulator">
+    <title>AushadhiAlert PHC — Medicine Stock-Out Early Warning System</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Top Header -->
+    <header class="app-header">
+        <div class="header-container">
+            <div class="brand-title">
+                <div class="logo-icon">
+                    <i class="fa-solid fa-square-plus"></i>
+                </div>
+                <div>
+                    <h1>AushadhiAlert PHC</h1>
+                    <p class="subtitle">Medicine Stock-Out Early Warning, Safe Redistribution & Supply Chain Simulator</p>
+                </div>
+            </div>
+            
+            <div class="header-actions">
+                <span class="simulated-badge" title="This system operates on simulated data for evaluation and hackathon demo purposes">
+                    <i class="fa-solid fa-flask"></i> SIMULATED DEMO DATA
+                </span>
+                <button id="btn-demo" class="btn btn-warning">
+                    <i class="fa-solid fa-play"></i> Load Demo Scenario
+                </button>
+                <button id="btn-reset" class="btn btn-secondary">
+                    <i class="fa-solid fa-rotate-left"></i> Reset Data
+                </button>
+                <button id="btn-add-modal" class="btn btn-primary">
+                    <i class="fa-solid fa-plus"></i> Add/Update Stock
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Simulated Data Notice Banner -->
+    <div class="notice-banner">
+        <i class="fa-solid fa-circle-info"></i>
+        <span><strong>Prototype Mode:</strong> Calculations use in-memory state with browser local storage backup. Stock transfers are simulated recommendations requiring official health authority approval.</span>
+    </div>
+
+    <!-- Main Container -->
+    <main class="dashboard-container">
+        <!-- KPI Metrics Grid -->
+        <section class="kpi-grid" id="kpi-summary">
+            <div class="kpi-card">
+                <div class="kpi-icon icon-blue">
+                    <i class="fa-solid fa-hospital"></i>
+                </div>
+                <div class="kpi-content">
+                    <span class="kpi-label">Health Centres</span>
+                    <h2 id="metric-centres">4</h2>
+                    <span class="kpi-subtext">Monitored PHC network</span>
+                </div>
+            </div>
+
+            <div class="kpi-card">
+                <div class="kpi-icon icon-indigo">
+                    <i class="fa-solid fa-pills"></i>
+                </div>
+                <div class="kpi-content">
+                    <span class="kpi-label">Medicines Tracked</span>
+                    <h2 id="metric-medicines">6</h2>
+                    <span class="kpi-subtext">Total inventory line items</span>
+                </div>
+            </div>
+
+            <div class="kpi-card card-critical">
+                <div class="kpi-icon icon-red">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                </div>
+                <div class="kpi-content">
+                    <span class="kpi-label">Critical Shortages</span>
+                    <h2 id="metric-critical">0</h2>
+                    <span class="kpi-subtext" id="metric-critical-sub">At risk of stock-out</span>
+                </div>
+            </div>
+
+            <div class="kpi-card card-transfer">
+                <div class="kpi-icon icon-emerald">
+                    <i class="fa-solid fa-truck-medical"></i>
+                </div>
+                <div class="kpi-content">
+                    <span class="kpi-label">Suggested Transfers</span>
+                    <h2 id="metric-transfers">0</h2>
+                    <span class="kpi-subtext" id="metric-transfer-units">0 units total</span>
+                </div>
+            </div>
+
+            <div class="kpi-card card-procurement">
+                <div class="kpi-icon icon-amber">
+                    <i class="fa-solid fa-boxes-packing"></i>
+                </div>
+                <div class="kpi-content">
+                    <span class="kpi-label">District Procurement</span>
+                    <h2 id="metric-district-req">0</h2>
+                    <span class="kpi-subtext">Units needed from district</span>
+                </div>
+            </div>
+
+            <div class="kpi-card card-expiry">
+                <div class="kpi-icon icon-purple">
+                    <i class="fa-solid fa-calendar-xmark"></i>
+                </div>
+                <div class="kpi-content">
+                    <span class="kpi-label">Near / Expired Batches</span>
+                    <h2 id="metric-expired">0</h2>
+                    <span class="kpi-subtext" id="metric-expired-sub">Excluded from usable stock</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Filters & Controls Bar -->
+        <section class="controls-panel">
+            <div class="search-box">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input type="text" id="filter-search" placeholder="Search centre, medicine, or batch...">
+            </div>
+
+            <div class="filter-group">
+                <label for="filter-centre"><i class="fa-solid fa-filter"></i> Health Centre:</label>
+                <select id="filter-centre">
+                    <option value="ALL">All Health Centres</option>
+                </select>
+            </div>
+
+            <div class="filter-group">
+                <label for="filter-medicine"><i class="fa-solid fa-pills"></i> Medicine:</label>
+                <select id="filter-medicine">
+                    <option value="ALL">All Medicines</option>
+                </select>
+            </div>
+
+            <div class="filter-group">
+                <label for="filter-urgency"><i class="fa-solid fa-gauge-high"></i> Status:</label>
+                <select id="filter-urgency">
+                    <option value="ALL">All Urgencies</option>
+                    <option value="CRITICAL">Critical (&le; Lead Time)</option>
+                    <option value="WARNING">Warning (&le; 1.5x Lead Time)</option>
+                    <option value="SAFE">Safe Stock</option>
+                    <option value="OUTDATED">Outdated Record (>14d)</option>
+                </select>
+            </div>
+
+            <div class="filter-group lead-time-group">
+                <label for="input-lead-time" title="Replenishment Lead Time in Days"><i class="fa-solid fa-clock"></i> Lead Time (Days):</label>
+                <input type="number" id="input-lead-time" value="10" min="1" max="90" style="width: 70px;">
+            </div>
+        </section>
+
+        <!-- Main Dashboard Navigation Tabs -->
+        <div class="nav-tabs">
+            <button class="tab-btn active" data-tab="tab-inventory">
+                <i class="fa-solid fa-table-list"></i> Inventory & Stockout Forecasts
+            </button>
+            <button class="tab-btn" data-tab="tab-redistribution">
+                <i class="fa-solid fa-route"></i> Redistribution & District Procurement
+            </button>
+            <button class="tab-btn" data-tab="tab-batch">
+                <i class="fa-solid fa-boxes-stacked"></i> Batch & Expiry Management
+            </button>
+            <button class="tab-btn" data-tab="tab-network">
+                <i class="fa-solid fa-chart-pie"></i> Facility Risk & Network
+            </button>
+            <button class="tab-btn" data-tab="tab-simulation">
+                <i class="fa-solid fa-sliders"></i> What-If Supply Simulator
+            </button>
+        </div>
+
+        <!-- TAB 1: Inventory Forecasting Table -->
+        <section id="tab-inventory" class="tab-content active">
+            <div class="table-card">
+                <div class="table-header">
+                    <div>
+                        <h3><i class="fa-solid fa-list-check"></i> PHC Medicine Inventory Forecasts & Risk Explanations</h3>
+                        <p class="section-desc">Stockout forecasts based on usable stock (excluding expired batches), daily consumption, and lead-time risk parameters.</p>
+                    </div>
+                    <span class="count-badge" id="inventory-count">Showing 0 items</span>
+                </div>
+                <div class="table-responsive">
+                    <table class="data-table" id="inventory-table">
+                        <thead>
+                            <tr>
+                                <th>Health Centre</th>
+                                <th>Medicine Item</th>
+                                <th>Usable Stock</th>
+                                <th>Daily Cons.</th>
+                                <th>Days Left</th>
+                                <th>Est. Stock-Out Date</th>
+                                <th>Target Stock</th>
+                                <th>Shortfall</th>
+                                <th>Risk Reason & Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="inventory-tbody">
+                            <!-- Populated via script.js -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 2: Redistribution Suggestions & District Requirements -->
+        <section id="tab-redistribution" class="tab-content">
+            <div class="redistribution-grid">
+                <!-- Suggested Transfers -->
+                <div class="table-card">
+                    <div class="table-header">
+                        <div>
+                            <h3><i class="fa-solid fa-truck-ramp-box"></i> Inter-PHC Suggested Surplus Transfers</h3>
+                            <p class="section-desc">Greedy optimization prioritizing most urgent shortages and closest surplus donors while preserving donor safety stock.</p>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Priority</th>
+                                    <th>Recipient PHC</th>
+                                    <th>Donor PHC</th>
+                                    <th>Medicine Item</th>
+                                    <th>Distance</th>
+                                    <th>Suggested Transfer</th>
+                                    <th>Algorithm Reasoning</th>
+                                    <th>Execute Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="transfer-tbody">
+                                <!-- Populated via script.js -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- District Procurement Requirements -->
+                <div class="table-card">
+                    <div class="table-header">
+                        <div>
+                            <h3><i class="fa-solid fa-warehouse"></i> District Authority Procurement Deficit</h3>
+                            <p class="section-desc">Shortfalls that CANNOT be satisfied by nearby PHC safe surplus and require immediate district purchase/dispatch.</p>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Affected PHC</th>
+                                    <th>Medicine Required</th>
+                                    <th>Total Shortfall</th>
+                                    <th>Covered by Transfers</th>
+                                    <th>Remaining District Req.</th>
+                                    <th>Status & Audit Note</th>
+                                </tr>
+                            </thead>
+                            <tbody id="district-tbody">
+                                <!-- Populated via script.js -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 3: Batch & Expiry Management -->
+        <section id="tab-batch" class="tab-content">
+            <div class="table-card">
+                <div class="table-header">
+                    <div>
+                        <h3><i class="fa-solid fa-boxes-stacked"></i> Medicine Batch & Expiry Tracking</h3>
+                        <p class="section-desc">Tracks batch numbers, manufacturing dates, expiry dates, and automatically excludes expired quantities from usable inventory.</p>
+                    </div>
+                    <button id="btn-add-batch-modal" class="btn btn-primary btn-sm">
+                        <i class="fa-solid fa-plus"></i> Add Batch Record
+                    </button>
+                </div>
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Batch Number</th>
+                                <th>Health Centre</th>
+                                <th>Medicine Item</th>
+                                <th>Batch Quantity</th>
+                                <th>Expiry Date</th>
+                                <th>Days to Expiry</th>
+                                <th>Usability Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="batch-tbody">
+                            <!-- Populated via script.js -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 4: Facility Risk Overview & Network Matrix -->
+        <section id="tab-network" class="tab-content">
+            <!-- Facility Risk Summary Cards -->
+            <div class="facility-risk-grid" id="facility-risk-container">
+                <!-- Dynamic PHC facility risk cards -->
+            </div>
+
+            <div class="table-card" style="margin-top: 1.5rem;">
+                <div class="table-header">
+                    <div>
+                        <h3><i class="fa-solid fa-map-location-dot"></i> Health Centre Distance Matrix (km)</h3>
+                        <p class="section-desc">Distances used by the redistribution algorithm to prefer nearby donor PHCs.</p>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="data-table" id="distance-matrix-table">
+                        <!-- Populated via script.js -->
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 5: What-If Supply Chain Simulator -->
+        <section id="tab-simulation" class="tab-content">
+            <div class="simulation-panel">
+                <div class="simulation-header">
+                    <div>
+                        <h3><i class="fa-solid fa-sliders"></i> Interactive What-If Supply Chain & Demand Simulator</h3>
+                        <p class="section-desc">Simulate disease outbreak demand spikes, logistics delay shocks, or supply reductions to test network resilience.</p>
+                    </div>
+                    <button id="btn-reset-sim" class="btn btn-secondary btn-sm">
+                        <i class="fa-solid fa-rotate-left"></i> Reset Simulator
+                    </button>
+                </div>
+
+                <div class="simulation-controls-grid">
+                    <div class="sim-card">
+                        <label for="sim-demand-multiplier">
+                            <i class="fa-solid fa-chart-line"></i> Demand Outbreak Multiplier: 
+                            <strong id="val-demand-multiplier">1.0x</strong>
+                        </label>
+                        <input type="range" id="sim-demand-multiplier" min="1.0" max="3.0" step="0.1" value="1.0">
+                        <p class="sim-help">Simulates sudden patient surge during seasonal outbreak (e.g. 2.0x consumption).</p>
+                    </div>
+
+                    <div class="sim-card">
+                        <label for="sim-delay-days">
+                            <i class="fa-solid fa-truck-delay"></i> Supplier Delivery Delay: 
+                            <strong id="val-delay-days">+0 days</strong>
+                        </label>
+                        <input type="range" id="sim-delay-days" min="0" max="30" step="1" value="0">
+                        <p class="sim-help">Simulates monsoon or transport delays adding extra lead time before resupply.</p>
+                    </div>
+
+                    <div class="sim-card">
+                        <label for="sim-supply-shock">
+                            <i class="fa-solid fa-box-archive"></i> Supply Loss / Damage Shock: 
+                            <strong id="val-supply-shock">0%</strong>
+                        </label>
+                        <input type="range" id="sim-supply-shock" min="0" max="50" step="5" value="0">
+                        <p class="sim-help">Simulates unexpected batch spoilage or cold chain breakdown stock loss.</p>
+                    </div>
+                </div>
+
+                <div class="sim-impact-banner" id="sim-impact-summary">
+                    <i class="fa-solid fa-circle-check"></i> Baseline mode active. Move sliders to test supply chain stress scenarios.
+                </div>
+
+                <div class="table-card">
+                    <div class="table-header">
+                        <h3><i class="fa-solid fa-microchip"></i> What-If Projected Stockout Risk Table</h3>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Health Centre</th>
+                                    <th>Medicine Item</th>
+                                    <th>Baseline Days</th>
+                                    <th>Simulated Days</th>
+                                    <th>Simulated Stockout Date</th>
+                                    <th>Baseline Risk</th>
+                                    <th>Simulated Risk</th>
+                                    <th>Simulated District Need</th>
+                                </tr>
+                            </thead>
+                            <tbody id="sim-tbody">
+                                <!-- Populated via script.js -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+        <p>AushadhiAlert PHC Early Warning System &copy; 2026. Built with Vanilla HTML, CSS & JavaScript.</p>
+        <p class="footer-subtext">Designed for Primary Health Centres (PHC) & District Health Officers (DHO).</p>
+    </footer>
+
+    <!-- Add/Edit Stock Modal -->
+    <div id="modal-stock" class="modal-overlay">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-file-circle-plus"></i> Add or Update Medicine Stock</h3>
+                <button class="modal-close" class="btn-close-modal">&times;</button>
+            </div>
+            <form id="form-stock" class="modal-body">
+                <div class="form-group">
+                    <label for="modal-centre">Health Centre:</label>
+                    <select id="modal-centre" required>
+                        <!-- Populated dynamically -->
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="modal-medicine">Medicine Name & Unit:</label>
+                    <input type="text" id="modal-medicine" placeholder="e.g. Paracetamol Syrup (100ml)" required>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="modal-stock-qty">Current Stock Qty:</label>
+                        <input type="number" id="modal-stock-qty" min="0" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="modal-daily-cons">Avg Daily Consumption:</label>
+                        <input type="number" id="modal-daily-cons" min="0" step="0.1" required>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="modal-target-days">Target Coverage (Days):</label>
+                        <input type="number" id="modal-target-days" value="30" min="1" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="modal-last-updated">Last Updated Date:</label>
+                        <input type="date" id="modal-last-updated" required>
+                    </div>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary btn-close-modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Inventory Item</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Add Batch Modal -->
+    <div id="modal-batch" class="modal-overlay">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-box-archive"></i> Register New Medicine Batch</h3>
+                <button class="modal-close" id="btn-close-batch-modal">&times;</button>
+            </div>
+            <form id="form-batch" class="modal-body">
+                <div class="form-group">
+                    <label for="modal-batch-centre">Health Centre:</label>
+                    <select id="modal-batch-centre" required></select>
+                </div>
+
+                <div class="form-group">
+                    <label for="modal-batch-medicine">Medicine Name:</label>
+                    <select id="modal-batch-medicine" required></select>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="modal-batch-num">Batch Number:</label>
+                        <input type="text" id="modal-batch-num" placeholder="e.g. BATCH-2026-P01" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="modal-batch-qty">Batch Quantity:</label>
+                        <input type="number" id="modal-batch-qty" min="1" required>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="modal-batch-expiry">Expiry Date:</label>
+                    <input type="date" id="modal-batch-expiry" required>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" id="btn-cancel-batch">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Add Batch Record</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Confirm Modal -->
+    <div id="modal-confirm" class="modal-overlay">
+        <div class="modal-card modal-sm">
+            <div class="modal-header">
+                <h3 id="confirm-title"><i class="fa-solid fa-circle-question"></i> Confirm Action</h3>
+                <button class="modal-close" id="btn-close-confirm">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="confirm-message">Are you sure you want to proceed?</p>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" id="btn-cancel-confirm">Cancel</button>
+                    <button type="button" class="btn btn-warning" id="btn-action-confirm">Proceed</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <script src="script.js"></script>
+</body>
+</html>
