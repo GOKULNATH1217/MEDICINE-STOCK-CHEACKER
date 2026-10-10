@@ -6,8 +6,8 @@
  * 
  * CORE ALGORITHMIC FORMULAS & WORKFLOWS:
  * 1. Usable Stock = Total Physical Stock - Expired Batch Stock (Deducted exactly once)
- * 2. Days Remaining = Usable Stock / Effective Daily Consumption (0 if Usable Stock == 0)
- * 3. Target Stock = Effective Daily Consumption * Target Coverage Days
+ * 2. Days Remaining = Usable Stock / Average Daily Consumption (0 if Usable Stock == 0)
+ * 3. Target Stock = Average Daily Consumption * Target Coverage Days
  * 4. Shortfall = Max(0, Target Stock - Usable Stock)
  * 5. Donor Safe Surplus = Max(0, Usable Stock - Donor Safety Stock)
  * 6. Greedy Inter-PHC Redistribution:
@@ -20,27 +20,14 @@
  * ============================================================================
  */
 
-// Global Config & Robust XSS Escaping Helper
-function toLocalISO(d) {
-    const p = n => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
+// Global Config
+function toLocalISO(d) { const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; }
 
-function esc(s) {
-    if (s === null || s === undefined) return '';
-    return String(s).replace(/[&<>"']/g, c => ({
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#39;'
-    }[c]));
-}
+function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 // Builds N days of history ending today; uses = daily consumption, oldest -> newest
 function makeHistory(now, uses) {
-    const h = [];
-    let s = now;
+    const h = []; let s = now;
     for (let i = 0; i <= uses.length; i++) {
         h.unshift({ date: getPastDateString(i), stock: s, adj: 0 });
         s += uses[uses.length - 1 - i] || 0;
@@ -48,66 +35,43 @@ function makeHistory(now, uses) {
     return h;
 }
 
-// Records a stock checkpoint. adj = net stock received (+) or sent away (-) since the last point
+// Records a stock point. adj = net stock received (+) or sent away (-) since the last point
 function recordHistory(item, adj = 0, date = toLocalISO(new Date())) {
-    item.history = item.history || [{ date: item.lastUpdated || getPastDateString(0), stock: item.currentStock - adj, adj: 0 }];
+    item.history = item.history || [{ date: item.lastUpdated, stock: item.currentStock - adj, adj: 0 }];
     const last = item.history[item.history.length - 1];
-    if (last && last.date === date) {
-        last.stock = item.currentStock;
-        last.adj = (last.adj || 0) + adj;
-    } else {
-        item.history.push({ date, stock: item.currentStock, adj });
-    }
+    if (last.date === date) { last.stock = item.currentStock; last.adj = (last.adj || 0) + adj; }
+    else item.history.push({ date, stock: item.currentStock, adj });
     item.history.sort((a, b) => a.date.localeCompare(b.date));
 }
 
-// Historical Consumption Forecasting Pipeline
+// Consumption measured from history, not typed in
 function computeUsage(item) {
     const h = (item.history || []).slice().sort((a, b) => a.date.localeCompare(b.date));
     const iv = [];
-
     for (let i = 1; i < h.length; i++) {
         const days = (new Date(h[i].date) - new Date(h[i - 1].date)) / 864e5;
         const used = h[i - 1].stock + (h[i].adj || 0) - h[i].stock;
-        if (days > 0 && used >= 0) {
-            iv.push({ days, used });
-        }
+        if (days > 0 && used >= 0) iv.push({ days, used });
     }
-
-    if (!iv.length) {
-        return { rate: Math.max(0, item.dailyConsumption || 0), method: 'manual', trend: 'steady', days: 0 };
-    }
-
+    if (!iv.length) return { rate: item.dailyConsumption, method: 'manual', trend: 'steady', days: 0 };
     const sum = a => a.reduce((s, x) => [s[0] + x.used, s[1] + x.days], [0, 0]);
-    const win = iv.slice(-14);
-    const [u, d] = sum(win);
-
-    if (d <= 0) {
-        return { rate: Math.max(0, item.dailyConsumption || 0), method: 'manual', trend: 'steady', days: 0 };
-    }
-
-    const overall = u / d;
-    const [ru, rd] = sum(iv.slice(-3));
-    const recent = rd > 0 ? ru / rd : overall;
-
+    const win = iv.slice(-14), [u, d] = sum(win), overall = u / d;
+    const [ru, rd] = sum(iv.slice(-3)), recent = ru / rd;
     const rising = win.length >= 4 && recent >= overall * 1.25;
     const falling = win.length >= 4 && recent <= overall * 0.75;
-    const rate = rising ? recent : overall;
-
     return {
-        rate: rate > 0 ? rate : Math.max(0, item.dailyConsumption || 0),
-        overall,
-        recent,
-        method: 'history',
-        days: Math.round(d),
+        rate: rising ? recent : overall, overall, recent, method: 'history', days: Math.round(d),
         trend: rising ? 'rising' : falling ? 'falling' : 'steady'
     };
 }
 
-function usageNote(i) {
-    return i.usage && i.usage.method === 'history' ? `${i.usage.days}d history · ${i.usage.trend}` : 'manual estimate';
+function sparkline(item) {
+    const h = (item.history || []).slice(-14); if (h.length < 2) return '';
+    const mx = Math.max(...h.map(p => p.stock), 1), w = 90, ht = 22;
+    const pts = h.map((p, i) => `${(i / (h.length - 1) * w).toFixed(1)},${(ht - p.stock / mx * ht).toFixed(1)}`).join(' ');
+    return `<svg width="${w}" height="${ht}"><polyline points="${pts}" fill="none" stroke="#dc2626" stroke-width="2"/></svg>`;
 }
-
+function usageNote(i) { return i.usage.method === 'history' ? `${i.usage.days}d history · usage ${i.usage.trend}` : 'manual estimate'; }
 let leadTimeDays = 10;
 
 // Symmetric Distance Matrix (km)
@@ -184,7 +148,7 @@ const initialInventorySeed = [
         currentStock: 120,
         dailyConsumption: 15,
         targetCoverageDays: 30,
-        lastUpdated: getPastDateString(18)
+        lastUpdated: getPastDateString(18) // Outdated record (>14 days)
     },
     {
         id: 'INV-005',
@@ -218,7 +182,7 @@ const initialInventorySeed = [
         centreId: 'Centre A',
         medicineName: 'Metformin 500mg Tablets',
         currentStock: 300,
-        dailyConsumption: 0,
+        dailyConsumption: 0, // Zero consumption test case
         targetCoverageDays: 30,
         lastUpdated: getPastDateString(4)
     },
@@ -365,8 +329,8 @@ function calculateStockoutDate(daysRemaining) {
 }
 
 /**
- * Medicine Expiry Utility & Batch Accounting
- * Excludes expired batch quantities from usable stock.
+ * Medicine Expiry Utility
+ * Strictly EXCLUDES expired batch quantities from usable stock.
  */
 function getItemBatchAnalysis(centreId, medicineName) {
     const matchingBatches = batchState.filter(b =>
@@ -374,23 +338,19 @@ function getItemBatchAnalysis(centreId, medicineName) {
         b.medicineName.toLowerCase() === medicineName.toLowerCase()
     );
 
-    let validBatchQty = 0;
     let expiredQty = 0;
     let nearExpiryQty = 0;
 
     matchingBatches.forEach(b => {
         const daysLeft = getDaysUntilExpiry(b.expiryDate);
         if (daysLeft < 0) {
-            expiredQty += (b.quantity || 0);
-        } else {
-            validBatchQty += (b.quantity || 0);
-            if (daysLeft <= 60) {
-                nearExpiryQty += (b.quantity || 0);
-            }
+            expiredQty += b.quantity;
+        } else if (daysLeft <= 60) {
+            nearExpiryQty += b.quantity;
         }
     });
 
-    return { matchingBatches, validBatchQty, expiredQty, nearExpiryQty };
+    return { matchingBatches, expiredQty, nearExpiryQty };
 }
 
 /**
@@ -400,37 +360,26 @@ function processForecastItem(item) {
     const daysSinceUpdate = getDaysSince(item.lastUpdated);
     const isOutdated = daysSinceUpdate > 14 || daysSinceUpdate < 0;
 
-    // Historical Consumption Analysis
-    const usage = computeUsage(item);
-    const effectiveConsumption = (usage.method === 'history' && usage.rate > 0) ? usage.rate : (item.dailyConsumption || 0);
+    // Deduct expired batch stock from usable stock
+    const { expiredQty, nearExpiryQty } = getItemBatchAnalysis(item.centreId, item.medicineName);
+    const usableStock = Math.max(0, item.currentStock - expiredQty);
 
-    // Batch Accounting & Expired Stock Deduction
-    const { matchingBatches, validBatchQty, expiredQty, nearExpiryQty } = getItemBatchAnalysis(item.centreId, item.medicineName);
-
-    // Usable Stock: Excludes expired batches. If batch records exist, valid non-expired batch stock is authoritative.
-    let usableStock;
-    if (matchingBatches.length > 0) {
-        usableStock = Math.min(Math.max(0, item.currentStock), validBatchQty);
-    } else {
-        usableStock = Math.max(0, item.currentStock);
-    }
-
-    // Estimated Days Remaining
+    // Estimated Days Remaining handling zero stock & zero consumption
     let daysRemaining;
-    if (effectiveConsumption <= 0) {
+    if (item.dailyConsumption <= 0) {
         daysRemaining = Infinity;
     } else if (usableStock === 0) {
         daysRemaining = 0;
     } else {
-        daysRemaining = usableStock / effectiveConsumption;
+        daysRemaining = usableStock / item.dailyConsumption;
     }
 
-    // Shortfall & Target Stock based on effective consumption
-    const targetStock = effectiveConsumption * item.targetCoverageDays;
+    // Shortfall & Target Stock
+    const targetStock = item.dailyConsumption * item.targetCoverageDays;
     const shortfall = Math.max(0, Math.round(targetStock - usableStock));
 
     // Donor Safe Surplus
-    const safetyStock = effectiveConsumption * item.targetCoverageDays;
+    const safetyStock = item.dailyConsumption * item.targetCoverageDays;
     const rawSurplus = Math.max(0, Math.round(usableStock - safetyStock));
     const donorSurplus = isOutdated ? 0 : rawSurplus;
 
@@ -441,7 +390,7 @@ function processForecastItem(item) {
     if (isOutdated) {
         status = 'OUTDATED';
         riskReason = `Record updated ${daysSinceUpdate}d ago (>14d). Audit required.`;
-    } else if (usableStock === 0 && effectiveConsumption > 0) {
+    } else if (usableStock === 0 && item.dailyConsumption > 0) {
         status = 'CRITICAL';
         riskReason = `OUT OF STOCK! Zero usable units remaining.`;
     } else if (daysRemaining <= leadTimeDays) {
@@ -464,10 +413,7 @@ function processForecastItem(item) {
 
     return {
         ...item,
-        usage,
-        effectiveConsumption,
         usableStock,
-        validBatchQty,
         expiredQty,
         nearExpiryQty,
         daysRemaining,
@@ -548,6 +494,7 @@ function computeRedistribution(processedInventory) {
 
         // Calculate remaining district requirement
         const remainingDistrictReq = recipient.shortfall - totalAllocatedForRecipient;
+        // REQUIREMENT: Only list procurement rows where remaining requirement > 0!
         if (remainingDistrictReq > 0) {
             districtRequirements.push({
                 centreId: recipient.centreId,
@@ -565,15 +512,9 @@ function computeRedistribution(processedInventory) {
 }
 
 /**
- * Execute Transfer Action with Batch Quantity Synchronization & Rejection Guard
+ * Execute Transfer Action with Batch Quantity Synchronization
  */
 function executeTransfer(donorCentre, recipientCentre, medicineName, qty) {
-    const transferQty = parseInt(qty, 10);
-    if (isNaN(transferQty) || transferQty <= 0) {
-        showToast('Error: Transfer quantity must be a positive number.', 'error');
-        return;
-    }
-
     const donorIdx = inventoryState.findIndex(i => i.centreId === donorCentre && i.medicineName === medicineName);
     let recipientIdx = inventoryState.findIndex(i => i.centreId === recipientCentre && i.medicineName === medicineName);
 
@@ -582,69 +523,53 @@ function executeTransfer(donorCentre, recipientCentre, medicineName, qty) {
         return;
     }
 
-    const donorItem = inventoryState[donorIdx];
-
-    // Check physical stock
-    if (donorItem.currentStock < transferQty) {
-        showToast(`Transfer rejected: Donor PHC has only ${donorItem.currentStock} units physical stock (requested ${transferQty}).`, 'error');
+    if (inventoryState[donorIdx].currentStock < qty) {
+        showToast('Error: Donor PHC does not have enough stock to complete transfer.', 'error');
         return;
     }
 
-    // Check valid non-expired batch availability
-    const { matchingBatches, validBatchQty } = getItemBatchAnalysis(donorCentre, medicineName);
-    if (matchingBatches.length > 0 && validBatchQty < transferQty) {
-        showToast(`Transfer rejected: Donor PHC has only ${validBatchQty} units in valid non-expired batches (requested ${transferQty}). Cannot complete transfer without unbacked stock.`, 'error');
+    // Re-verify donor surplus before executing
+    const donorProcessed = processForecastItem(inventoryState[donorIdx]);
+    if (donorProcessed.donorSurplus < qty) {
+        showToast(`Warning: Re-validation check failed. Donor surplus has changed (${donorProcessed.donorSurplus} units available).`, 'warning');
         return;
     }
 
-    // Re-verify donor safe surplus
-    const donorProcessed = processForecastItem(donorItem);
-    if (donorProcessed.donorSurplus < transferQty) {
-        showToast(`Transfer rejected: Requested ${transferQty} units exceeds donor safe surplus (${donorProcessed.donorSurplus} units safe surplus available).`, 'error');
-        return;
-    }
+    // Deduct stock from Donor
+    inventoryState[donorIdx].currentStock -= qty;
+    inventoryState[donorIdx].lastUpdated = getPastDateString(0);
 
-    // Deduct stock from Donor & record stock adjustment point
-    donorItem.currentStock -= transferQty;
-    donorItem.lastUpdated = getPastDateString(0);
-    recordHistory(donorItem, -transferQty);
-
-    // Credit stock to Recipient & record stock adjustment point
+    // Credit stock to Recipient
     if (recipientIdx >= 0) {
-        inventoryState[recipientIdx].currentStock += transferQty;
+        inventoryState[recipientIdx].currentStock += qty;
         inventoryState[recipientIdx].lastUpdated = getPastDateString(0);
-        recordHistory(inventoryState[recipientIdx], transferQty);
     } else {
-        const newRecipientItem = {
+        inventoryState.push({
             id: `INV-${Date.now()}`,
             centreId: recipientCentre,
             medicineName: medicineName,
-            currentStock: transferQty,
-            dailyConsumption: donorItem.dailyConsumption || 5,
-            targetCoverageDays: donorItem.targetCoverageDays || 30,
+            currentStock: qty,
+            dailyConsumption: inventoryState[donorIdx].dailyConsumption || 5,
+            targetCoverageDays: inventoryState[donorIdx].targetCoverageDays || 30,
             lastUpdated: getPastDateString(0)
-        };
-        recordHistory(newRecipientItem, transferQty);
-        inventoryState.push(newRecipientItem);
+        });
     }
 
-    // Batch Synchronization: Move valid batch quantities from Donor to Recipient (earliest expiry first)
-    let remainingToMove = transferQty;
-    const validDonorBatches = batchState
-        .filter(b =>
-            b.centreId === donorCentre &&
-            b.medicineName.toLowerCase() === medicineName.toLowerCase() &&
-            getDaysUntilExpiry(b.expiryDate) >= 0
-        )
-        .sort((a, b) => new Date(a.expiryDate) - new Date(b.expiryDate));
+    // Batch Synchronization: Move valid batch quantities from Donor to Recipient
+    let remainingToMove = qty;
+    const donorBatches = batchState.filter(b =>
+        b.centreId === donorCentre &&
+        b.medicineName.toLowerCase() === medicineName.toLowerCase() &&
+        getDaysUntilExpiry(b.expiryDate) >= 0
+    );
 
-    validDonorBatches.forEach(b => {
+    donorBatches.forEach(b => {
         if (remainingToMove <= 0) return;
         const moveQty = Math.min(b.quantity, remainingToMove);
         b.quantity -= moveQty;
         remainingToMove -= moveQty;
 
-        // Credit transferred batch to Recipient
+        // Add transferred batch record to Recipient
         batchState.push({
             id: `BAT-XFER-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
             batchNumber: `${b.batchNumber}-XFER`,
@@ -658,29 +583,11 @@ function executeTransfer(donorCentre, recipientCentre, medicineName, qty) {
     // Clean up empty donor batches
     batchState = batchState.filter(b => b.quantity > 0);
 
-    markCustomDataActive();
     saveStateToStorage();
     populateDropdowns();
     renderDashboard();
 
-    showToast(`⚡ Transferred ${transferQty} units of ${esc(medicineName)} from ${esc(donorCentre)} to ${esc(recipientCentre)}!`, 'success');
-}
-
-/**
- * Update Data Status Pill Indicator
- */
-function markDemoDataActive() {
-    const pill = document.getElementById('data-status-pill');
-    if (!pill) return;
-    pill.className = 'demo-mode-pill';
-    pill.innerHTML = `<i class="fa-solid fa-flask"></i> DEMO MODE DATA`;
-}
-
-function markCustomDataActive() {
-    const pill = document.getElementById('data-status-pill');
-    if (!pill) return;
-    pill.className = 'demo-mode-pill saved-mode';
-    pill.innerHTML = `<i class="fa-solid fa-database"></i> SAVED OPERATIONAL DATA`;
+    showToast(`⚡ Transferred ${qty} units of ${medicineName} from ${donorCentre} to ${recipientCentre}!`, 'success');
 }
 
 /**
@@ -716,10 +623,10 @@ function renderFacilityRiskMatrix(processedInventory) {
         card.innerHTML = `
             <div class="facility-card-header">
                 <div>
-                    <div class="facility-title">${esc(centreId)}</div>
-                    <div class="facility-sub">${esc(centreNames[centreId])}</div>
+                    <div class="facility-title">${centreId}</div>
+                    <div class="facility-sub">${centreNames[centreId]}</div>
                 </div>
-                <span class="badge ${esc(riskBadgeClass)}">${esc(riskLabel)}</span>
+                <span class="badge ${riskBadgeClass}">${riskLabel}</span>
             </div>
             <div class="facility-metrics">
                 <div class="facility-stat">
@@ -758,7 +665,6 @@ function renderSimulator(processedInventory) {
 
     const banner = document.getElementById('sim-impact-summary');
     const tbody = document.getElementById('sim-tbody');
-    if (!tbody) return;
     tbody.innerHTML = '';
 
     const effectiveLeadTime = leadTimeDays + delayDays;
@@ -768,7 +674,7 @@ function renderSimulator(processedInventory) {
 
     processedInventory.forEach(item => {
         const simStock = Math.max(0, item.usableStock * (1 - shockPercent / 100));
-        const simCons = (item.effectiveConsumption || item.dailyConsumption) * demandMult;
+        const simCons = item.dailyConsumption * demandMult;
 
         let simDaysLeft;
         if (simCons <= 0) {
@@ -797,13 +703,13 @@ function renderSimulator(processedInventory) {
 
         const tr = document.createElement('tr');
         tr.innerHTML = `
-            <td><strong>${esc(item.centreId)}</strong></td>
-            <td><strong>${esc(item.medicineName)}</strong></td>
+            <td><strong>${item.centreId}</strong></td>
+            <td><strong>${item.medicineName}</strong></td>
             <td>${item.daysRemaining === Infinity ? 'Infinite' : item.daysRemaining.toFixed(1) + 'd'}</td>
             <td><strong style="color: ${simDaysLeft <= effectiveLeadTime ? '#dc2626' : '#111827'};">${simDaysLeft === Infinity ? 'Infinite' : simDaysLeft.toFixed(1) + 'd'}</strong></td>
-            <td>${esc(simStockoutDate)}</td>
-            <td><span class="badge ${item.status === 'CRITICAL' ? 'badge-critical' : (item.status === 'WARNING' ? 'badge-warning' : 'badge-safe')}">${esc(item.status)}</span></td>
-            <td><span class="badge ${simStatus === 'CRITICAL' ? 'badge-critical' : (simStatus === 'WARNING' ? 'badge-warning' : 'badge-safe')}">${esc(simStatus)}</span></td>
+            <td>${simStockoutDate}</td>
+            <td><span class="badge ${item.status === 'CRITICAL' ? 'badge-critical' : (item.status === 'WARNING' ? 'badge-warning' : 'badge-safe')}">${item.status}</span></td>
+            <td><span class="badge ${simStatus === 'CRITICAL' ? 'badge-critical' : (simStatus === 'WARNING' ? 'badge-warning' : 'badge-safe')}">${simStatus}</span></td>
             <td>${simShortfall > 0 ? `<strong style="color:#dc2626;">${simShortfall} units</strong>` : '0'}</td>
         `;
         tbody.appendChild(tr);
@@ -854,15 +760,15 @@ function renderBatchTable() {
         if (daysLeft < 0) tr.className = 'row-expired';
 
         tr.innerHTML = `
-            <td><code>${esc(b.batchNumber)}</code></td>
-            <td><strong>${esc(b.centreId)}</strong></td>
-            <td><strong>${esc(b.medicineName)}</strong></td>
+            <td><code>${b.batchNumber}</code></td>
+            <td><strong>${b.centreId}</strong></td>
+            <td><strong>${b.medicineName}</strong></td>
             <td><strong>${b.quantity} units</strong></td>
-            <td>${esc(formatDate(b.expiryDate))}</td>
+            <td>${formatDate(b.expiryDate)}</td>
             <td>${daysLeft < 0 ? `<span style="color:#dc2626; font-weight:bold;">${daysLeft} days</span>` : `${daysLeft} days`}</td>
-            <td><span class="badge ${badgeClass}">${esc(statusLabel)}</span></td>
+            <td><span class="badge ${badgeClass}">${statusLabel}</span></td>
             <td>
-                <button class="btn btn-danger btn-sm btn-delete-batch" data-id="${esc(b.id)}">
+                <button class="btn btn-danger btn-sm btn-delete-batch" data-id="${b.id}">
                     <i class="fa-solid fa-trash"></i> Delete
                 </button>
             </td>
@@ -875,82 +781,12 @@ function renderBatchTable() {
             const batchId = e.currentTarget.dataset.id;
             showConfirmModal('Delete Batch Record', 'Are you sure you want to delete this batch record?', () => {
                 batchState = batchState.filter(b => b.id !== batchId);
-                markCustomDataActive();
                 saveStateToStorage();
                 renderDashboard();
                 showToast('Batch record deleted successfully.', 'info');
             });
         });
     });
-}
-
-/**
- * Render Live Operational Alerts Feed in Sidebar Panel
- */
-function renderAlertsFeed(processedList, suggestedTransfers) {
-    const feed = document.getElementById('alerts-feed');
-    if (!feed) return;
-    feed.innerHTML = '';
-
-    const criticals = processedList.filter(i => i.status === 'CRITICAL');
-    const outdated = processedList.filter(i => i.status === 'OUTDATED');
-    const expiredBatches = batchState.filter(b => getDaysUntilExpiry(b.expiryDate) < 0);
-
-    let html = '';
-
-    criticals.forEach(c => {
-        html += `
-            <div class="alert-item alert-item-critical">
-                <i class="fa-solid fa-triangle-exclamation" style="margin-top:0.15rem;"></i>
-                <div>
-                    <strong>CRITICAL: ${esc(c.centreId)}</strong>
-                    <div>${esc(c.medicineName)} has only ${c.usableStock} usable units (${c.daysRemaining === Infinity ? '0' : c.daysRemaining.toFixed(1)}d left).</div>
-                </div>
-            </div>
-        `;
-    });
-
-    suggestedTransfers.forEach(t => {
-        html += `
-            <div class="alert-item alert-item-info">
-                <i class="fa-solid fa-truck-fast" style="margin-top:0.15rem;"></i>
-                <div>
-                    <strong>TRANSFER OPPORTUNITY</strong>
-                    <div>Move ${t.transferQty} units of ${esc(t.medicineName)} from ${esc(t.donorCentre)} → ${esc(t.recipientCentre)} (${t.distanceKm} km).</div>
-                </div>
-            </div>
-        `;
-    });
-
-    expiredBatches.forEach(b => {
-        html += `
-            <div class="alert-item alert-item-warning">
-                <i class="fa-solid fa-box-archive" style="margin-top:0.15rem;"></i>
-                <div>
-                    <strong>EXPIRED BATCH DEDUCTED</strong>
-                    <div>Batch ${esc(b.batchNumber)} (${b.quantity} units) at ${esc(b.centreId)} expired on ${esc(formatDate(b.expiryDate))}.</div>
-                </div>
-            </div>
-        `;
-    });
-
-    outdated.forEach(o => {
-        html += `
-            <div class="alert-item alert-item-warning">
-                <i class="fa-solid fa-clock-rotate-left" style="margin-top:0.15rem;"></i>
-                <div>
-                    <strong>OUTDATED RECORD (>14d)</strong>
-                    <div>${esc(o.centreId)} - ${esc(o.medicineName)} inventory record updated ${o.daysSinceUpdate} days ago.</div>
-                </div>
-            </div>
-        `;
-    });
-
-    if (!html) {
-        html = `<div style="color:#16a34a; font-size:0.8rem; font-weight:600; padding:0.5rem;"><i class="fa-solid fa-circle-check"></i> All primary health centres operating within safe stock levels!</div>`;
-    }
-
-    feed.innerHTML = html;
 }
 
 /**
@@ -969,7 +805,7 @@ function renderDashboard() {
     const filteredList = processedList.filter(item => {
         const matchesSearch = item.centreId.toLowerCase().includes(searchVal) ||
             item.medicineName.toLowerCase().includes(searchVal) ||
-            (centreNames[item.centreId] && centreNames[item.centreId].toLowerCase().includes(searchVal));
+            centreNames[item.centreId]?.toLowerCase().includes(searchVal);
         const matchesCentre = (centreVal === 'ALL' || item.centreId === centreVal);
         const matchesMed = (medVal === 'ALL' || item.medicineName === medVal);
         const matchesUrgency = (urgencyVal === 'ALL' || item.status === urgencyVal);
@@ -980,226 +816,187 @@ function renderDashboard() {
     // 3. Compute Redistribution Engine
     const { suggestedTransfers, districtRequirements } = computeRedistribution(processedList);
 
-    // 4. Update Four Primary KPI Cards
+    // 4. Update Summary KPI Metrics
     const uniqueCentres = new Set(processedList.map(i => i.centreId)).size;
-    const totalMedicines = new Set(processedList.map(i => i.medicineName)).size;
-    const lowStockCount = processedList.filter(i => i.status === 'CRITICAL' || i.status === 'WARNING').length;
+    const uniqueMeds = new Set(processedList.map(i => i.medicineName)).size;
     const criticalCount = processedList.filter(i => i.status === 'CRITICAL').length;
     const totalTransferUnits = suggestedTransfers.reduce((acc, t) => acc + t.transferQty, 0);
     const totalDistrictReqUnits = districtRequirements.reduce((acc, d) => acc + d.remainingDistrictReq, 0);
+    const expiredBatchesCount = batchState.filter(b => getDaysUntilExpiry(b.expiryDate) < 0 || getDaysUntilExpiry(b.expiryDate) <= 60).length;
 
-    let expiredBatchesCount = 0;
-    batchState.forEach(b => {
-        if (getDaysUntilExpiry(b.expiryDate) < 0) expiredBatchesCount++;
-    });
-
-    const elMedicines = document.getElementById('metric-medicines');
-    if (elMedicines) elMedicines.textContent = totalMedicines;
-
-    const elLowStock = document.getElementById('metric-low-stock');
-    if (elLowStock) elLowStock.textContent = lowStockCount;
-
-    const elCritical = document.getElementById('metric-critical');
-    if (elCritical) elCritical.textContent = criticalCount;
-
-    const elExpired = document.getElementById('metric-expired');
-    if (elExpired) elExpired.textContent = expiredBatchesCount;
-
-    const elCentres = document.getElementById('metric-centres');
-    if (elCentres) elCentres.textContent = uniqueCentres;
-
-    const elTransfers = document.getElementById('metric-transfers');
-    if (elTransfers) elTransfers.textContent = suggestedTransfers.length;
-
-    const elTransUnits = document.getElementById('metric-transfer-units');
-    if (elTransUnits) elTransUnits.textContent = `${totalTransferUnits} units`;
-
-    const elDistReq = document.getElementById('metric-district-req');
-    if (elDistReq) elDistReq.textContent = `${totalDistrictReqUnits} units`;
+    document.getElementById('metric-centres').textContent = uniqueCentres;
+    document.getElementById('metric-medicines').textContent = uniqueMeds;
+    document.getElementById('metric-critical').textContent = criticalCount;
+    document.getElementById('metric-transfers').textContent = suggestedTransfers.length;
+    document.getElementById('metric-transfer-units').textContent = `${totalTransferUnits} units total`;
+    document.getElementById('metric-district-req').textContent = totalDistrictReqUnits;
+    document.getElementById('metric-expired').textContent = expiredBatchesCount;
 
     // 5. Render Overview / Needs Attention Table
     const tbodyOverview = document.getElementById('overview-tbody');
-    if (tbodyOverview) {
-        tbodyOverview.innerHTML = '';
-        const needsAttentionItems = filteredList.filter(i => i.status === 'CRITICAL' || i.status === 'WARNING' || i.status === 'OUTDATED');
-        const elAttn = document.getElementById('needs-attention-count');
-        if (elAttn) elAttn.textContent = `${needsAttentionItems.length} items need attention`;
+    tbodyOverview.innerHTML = '';
+    const needsAttentionItems = filteredList.filter(i => i.status === 'CRITICAL' || i.status === 'WARNING' || i.status === 'OUTDATED');
+    document.getElementById('needs-attention-count').textContent = `${needsAttentionItems.length} items need attention`;
 
-        if (needsAttentionItems.length === 0) {
-            tbodyOverview.innerHTML = `<tr><td colspan="9" style="text-align: center; color: #16a34a; padding: 2rem;"><i class="fa-solid fa-circle-check"></i> All Primary Health Centres are currently operating within safe stock levels!</td></tr>`;
-        } else {
-            needsAttentionItems.forEach(item => {
-                const tr = document.createElement('tr');
-                if (item.status === 'CRITICAL') tr.className = 'row-critical';
-                if (item.status === 'OUTDATED') tr.className = 'row-outdated';
+    if (needsAttentionItems.length === 0) {
+        tbodyOverview.innerHTML = `<tr><td colspan="9" style="text-align: center; color: #16a34a; padding: 2rem;"><i class="fa-solid fa-circle-check"></i> All Primary Health Centres are currently operate within safe stock levels!</td></tr>`;
+    } else {
+        needsAttentionItems.forEach(item => {
+            const tr = document.createElement('tr');
+            if (item.status === 'CRITICAL') tr.className = 'row-critical';
+            if (item.status === 'OUTDATED') tr.className = 'row-outdated';
 
-                let badgeClass = item.status === 'CRITICAL' ? 'badge-critical' : (item.status === 'WARNING' ? 'badge-warning' : 'badge-outdated');
-                let actionText = item.status === 'CRITICAL' ? 'Execute Transfer / Order Stock' : (item.status === 'WARNING' ? 'Prepare Reorder' : 'Verify Physical Stock');
+            let badgeClass = item.status === 'CRITICAL' ? 'badge-critical' : (item.status === 'WARNING' ? 'badge-warning' : 'badge-outdated');
+            let actionText = item.status === 'CRITICAL' ? 'Execute Transfer / Order District Stock' : (item.status === 'WARNING' ? 'Prepare Reorder' : 'Verify Physical Stock');
 
-                tr.innerHTML = `
-                    <td><span class="badge ${badgeClass}">${esc(item.status)}</span></td>
-                    <td><strong>${esc(item.centreId)}</strong> <br><small style="color:#64748b;">${esc(centreNames[item.centreId] || '')}</small></td>
-                    <td><strong>${esc(item.medicineName)}</strong></td>
-                    <td><strong>${item.usableStock}</strong></td>
-                    <td>${item.effectiveConsumption} / day <br><small style="color:#64748b; font-size:0.725rem;">${usageNote(item)}</small></td>
-                    <td><strong>${item.daysRemaining === Infinity ? 'Infinite' : item.daysRemaining.toFixed(1) + 'd'}</strong></td>
-                    <td>${esc(item.stockoutDate)}</td>
-                    <td><small style="color:#475569;">${esc(item.riskReason)}</small></td>
-                    <td><span class="btn btn-outline btn-sm">${esc(actionText)}</span></td>
-                `;
-                tbodyOverview.appendChild(tr);
-            });
-        }
+            tr.innerHTML = `
+                <td><span class="badge ${badgeClass}">${item.status}</span></td>
+                <td><strong>${item.centreId}</strong> <br><small style="color:#6b7280;">${centreNames[item.centreId] || ''}</small></td>
+                <td><strong>${item.medicineName}</strong></td>
+                <td><strong>${item.usableStock}</strong></td>
+                <td>${item.dailyConsumption} / day</td>
+                <td><strong>${item.daysRemaining === Infinity ? 'Infinite' : item.daysRemaining.toFixed(1) + 'd'}</strong></td>
+                <td>${item.stockoutDate}</td>
+                <td><small style="color:#4b5563;">${item.riskReason}</small></td>
+                <td><span class="btn btn-outline btn-sm">${actionText}</span></td>
+            `;
+            tbodyOverview.appendChild(tr);
+        });
     }
 
     // 6. Render Full Inventory Table
     const tbodyInv = document.getElementById('inventory-tbody');
-    if (tbodyInv) {
-        tbodyInv.innerHTML = '';
-        const elInvCount = document.getElementById('inventory-count');
-        if (elInvCount) elInvCount.textContent = `Showing ${filteredList.length} of ${processedList.length} items`;
+    tbodyInv.innerHTML = '';
+    document.getElementById('inventory-count').textContent = `Showing ${filteredList.length} of ${processedList.length} items`;
 
-        if (filteredList.length === 0) {
-            tbodyInv.innerHTML = `<tr><td colspan="10" style="text-align: center; color: #64748b; padding: 2rem;">No matching medicine stock records found.</td></tr>`;
-        } else {
-            filteredList.forEach(item => {
-                const tr = document.createElement('tr');
-                if (item.status === 'CRITICAL') tr.className = 'row-critical';
-                if (item.status === 'OUTDATED') tr.className = 'row-outdated';
+    if (filteredList.length === 0) {
+        tbodyInv.innerHTML = `<tr><td colspan="10" style="text-align: center; color: #6b7280; padding: 2rem;">No matching medicine stock records found.</td></tr>`;
+    } else {
+        filteredList.forEach(item => {
+            const tr = document.createElement('tr');
+            if (item.status === 'CRITICAL') tr.className = 'row-critical';
+            if (item.status === 'OUTDATED') tr.className = 'row-outdated';
 
-                let daysText = (item.daysRemaining === Infinity) ? 'Infinite (0 use)' : `${item.daysRemaining.toFixed(1)} days`;
-                let badgeClass = item.status === 'CRITICAL' ? 'badge-critical' : (item.status === 'WARNING' ? 'badge-warning' : (item.status === 'OUTDATED' ? 'badge-outdated' : 'badge-safe'));
+            let daysText = (item.daysRemaining === Infinity) ? 'Infinite (0 use)' : `${item.daysRemaining.toFixed(1)} days`;
+            let badgeClass = item.status === 'CRITICAL' ? 'badge-critical' : (item.status === 'WARNING' ? 'badge-warning' : (item.status === 'OUTDATED' ? 'badge-outdated' : 'badge-safe'));
 
-                tr.innerHTML = `
-                    <td><strong>${esc(item.centreId)}</strong> <br><small style="color:#64748b;">${esc(centreNames[item.centreId] || '')}</small></td>
-                    <td><strong>${esc(item.medicineName)}</strong></td>
-                    <td><strong>${item.usableStock}</strong> <br><small style="color:#64748b;">(${item.currentStock} total)</small></td>
-                    <td>${item.effectiveConsumption} / day <br><small style="color:#64748b; font-size:0.725rem;">${usageNote(item)}</small></td>
-                    <td><strong>${esc(daysText)}</strong></td>
-                    <td>${esc(item.stockoutDate)}</td>
-                    <td>${item.targetCoverageDays}d (${item.targetStock} units)</td>
-                    <td>${item.shortfall > 0 ? `<span style="color:#dc2626; font-weight:bold;">${item.shortfall} units</span>` : '<span style="color:#16a34a;">None</span>'}</td>
-                    <td>
-                        <span class="badge ${badgeClass}">${esc(item.status)}</span>
-                        <br><small style="color:#64748b; font-size: 0.725rem;">${esc(item.riskReason)}</small>
-                    </td>
-                    <td>
-                        <button class="btn btn-outline btn-sm btn-delete-item" data-id="${esc(item.id)}">
-                            <i class="fa-solid fa-trash"></i>
-                        </button>
-                    </td>
-                `;
-                tbodyInv.appendChild(tr);
-            });
+            tr.innerHTML = `
+                <td><strong>${item.centreId}</strong> <br><small style="color:#6b7280;">${centreNames[item.centreId] || ''}</small></td>
+                <td><strong>${item.medicineName}</strong></td>
+                <td><strong>${item.usableStock}</strong> <br><small style="color:#6b7280;">(${item.currentStock} total)</small></td>
+                <td>${item.dailyConsumption} / day</td>
+                <td><strong>${daysText}</strong></td>
+                <td>${item.stockoutDate}</td>
+                <td>${item.targetCoverageDays}d (${item.targetStock} units)</td>
+                <td>${item.shortfall > 0 ? `<span style="color:#dc2626; font-weight:bold;">${item.shortfall} units</span>` : '<span style="color:#16a34a;">None</span>'}</td>
+                <td>
+                    <span class="badge ${badgeClass}">${item.status}</span>
+                    <br><small style="color:#6b7280; font-size: 0.725rem;">${item.riskReason}</small>
+                </td>
+                <td>
+                    <button class="btn btn-outline btn-sm btn-delete-item" data-id="${item.id}">
+                        <i class="fa-solid fa-trash"></i>
+                    </button>
+                </td>
+            `;
+            tbodyInv.appendChild(tr);
+        });
 
-            document.querySelectorAll('.btn-delete-item').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    const itemId = e.currentTarget.dataset.id;
-                    showConfirmModal('Delete Inventory Record', 'Are you sure you want to delete this inventory record?', () => {
-                        inventoryState = inventoryState.filter(i => i.id !== itemId);
-                        markCustomDataActive();
-                        saveStateToStorage();
-                        renderDashboard();
-                        showToast('Inventory record deleted successfully.', 'info');
-                    });
+        document.querySelectorAll('.btn-delete-item').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const itemId = e.currentTarget.dataset.id;
+                showConfirmModal('Delete Inventory Record', 'Are you sure you want to delete this inventory record?', () => {
+                    inventoryState = inventoryState.filter(i => i.id !== itemId);
+                    saveStateToStorage();
+                    renderDashboard();
+                    showToast('Inventory record deleted successfully.', 'info');
                 });
             });
-        }
+        });
     }
 
-    // 7. Render Redistribution Tables
+    // 7. Render Redistribution Table with Visual Route Diagram
     const tbodyTrans = document.getElementById('transfer-tbody');
-    const tbodyTransTab = document.getElementById('transfer-tab-tbody');
+    tbodyTrans.innerHTML = '';
 
-    const renderTransRows = (containerEl) => {
-        if (!containerEl) return;
-        containerEl.innerHTML = '';
-        if (suggestedTransfers.length === 0) {
-            containerEl.innerHTML = `<tr><td colspan="7" style="text-align: center; color: #64748b; padding: 2rem;">No surplus transfers required currently. All health centres operate within safe stock levels!</td></tr>`;
-        } else {
-            suggestedTransfers.forEach((t, idx) => {
-                const tr = document.createElement('tr');
-                let badgeClass = t.priority.includes('CRITICAL') ? 'badge-critical' : (t.priority.includes('OUTDATED') ? 'badge-outdated' : 'badge-warning');
+    if (suggestedTransfers.length === 0) {
+        tbodyTrans.innerHTML = `<tr><td colspan="7" style="text-align: center; color: #6b7280; padding: 2rem;">No surplus transfers required currently. All health centres operate within safe stock levels!</td></tr>`;
+    } else {
+        suggestedTransfers.forEach((t, idx) => {
+            const tr = document.createElement('tr');
+            let badgeClass = t.priority.includes('CRITICAL') ? 'badge-critical' : (t.priority.includes('OUTDATED') ? 'badge-outdated' : 'badge-warning');
 
-                tr.innerHTML = `
-                    <td><span class="badge ${badgeClass}">#${idx + 1} ${esc(t.priority)}</span></td>
-                    <td>
-                        <div class="transfer-route-box">
-                            <span class="route-phc">${esc(t.donorCentre)}</span>
-                            <span class="route-arrow"><i class="fa-solid fa-arrow-right"></i> ${t.distanceKm} km</span>
-                            <span class="route-phc">${esc(t.recipientCentre)}</span>
-                        </div>
-                    </td>
-                    <td><strong>${esc(t.medicineName)}</strong></td>
-                    <td>${t.distanceKm} km</td>
-                    <td><strong style="color:#0284c7; font-size: 0.95rem;">${t.transferQty} units</strong></td>
-                    <td><small style="color:#475569;">${esc(t.reasoning)}</small></td>
-                    <td>
-                        <button class="btn btn-success btn-sm btn-exec-transfer" 
-                            data-donor="${esc(t.donorCentre)}" 
-                            data-recipient="${esc(t.recipientCentre)}" 
-                            data-medicine="${esc(t.medicineName)}" 
-                            data-qty="${t.transferQty}">
-                            <i class="fa-solid fa-truck-arrow-right"></i> Execute Transfer
-                        </button>
-                    </td>
-                `;
-                containerEl.appendChild(tr);
-            });
-        }
-    };
+            tr.innerHTML = `
+                <td><span class="badge ${badgeClass}">#${idx + 1} ${t.priority}</span></td>
+                <td>
+                    <div class="transfer-route-box">
+                        <span class="route-phc">${t.donorCentre}</span>
+                        <span class="route-arrow"><i class="fa-solid fa-arrow-right"></i> ${t.distanceKm} km</span>
+                        <span class="route-phc">${t.recipientCentre}</span>
+                    </div>
+                </td>
+                <td><strong>${t.medicineName}</strong></td>
+                <td>${t.distanceKm} km</td>
+                <td><strong style="color:#0284c7; font-size: 0.95rem;">${t.transferQty} units</strong></td>
+                <td><small style="color:#4b5563;">${t.reasoning}</small></td>
+                <td>
+                    <button class="btn btn-success btn-sm btn-exec-transfer" 
+                        data-donor="${t.donorCentre}" 
+                        data-recipient="${t.recipientCentre}" 
+                        data-medicine="${t.medicineName}" 
+                        data-qty="${t.transferQty}">
+                        <i class="fa-solid fa-truck-arrow-right"></i> Execute Transfer
+                    </button>
+                </td>
+            `;
+            tbodyTrans.appendChild(tr);
+        });
 
-    renderTransRows(tbodyTrans);
-    renderTransRows(tbodyTransTab);
+        document.querySelectorAll('.btn-exec-transfer').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const { donor, recipient, medicine, qty } = e.currentTarget.dataset;
+                const transferQty = parseInt(qty, 10);
+                const recipientItem = inventoryState.find(i => i.centreId === recipient && i.medicineName === medicine);
+                const isOutdated = recipientItem && getDaysSince(recipientItem.lastUpdated) > 14;
 
-    document.querySelectorAll('.btn-exec-transfer').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            const { donor, recipient, medicine, qty } = e.currentTarget.dataset;
-            const transferQty = parseInt(qty, 10);
-            const recipientItem = inventoryState.find(i => i.centreId === recipient && i.medicineName === medicine);
-            const isOutdated = recipientItem && getDaysSince(recipientItem.lastUpdated) > 14;
+                const msg = isOutdated ?
+                    `⚠️ WARNING: Recipient ${recipient} inventory record is outdated (>14 days). Physical stock audit is recommended. Are you sure you want to execute transfer of ${transferQty} units of ${medicine} from ${donor}?` :
+                    `Confirm execution of stock transfer: ${transferQty} units of ${medicine} from ${donor} to ${recipient}?`;
 
-            const msg = isOutdated ?
-                `⚠️ WARNING: Recipient ${recipient} inventory record is outdated (>14 days). Physical stock audit is recommended. Are you sure you want to execute transfer of ${transferQty} units of ${medicine} from ${donor}?` :
-                `Confirm execution of stock transfer: ${transferQty} units of ${medicine} from ${donor} to ${recipient}?`;
-
-            showConfirmModal('Review Stock Transfer', msg, () => {
-                executeTransfer(donor, recipient, medicine, transferQty);
+                showConfirmModal('Review Stock Transfer', msg, () => {
+                    executeTransfer(donor, recipient, medicine, transferQty);
+                });
             });
         });
-    });
-
-    // 8. Render District Procurement Requirements Table
-    const tbodyDist = document.getElementById('district-tbody');
-    if (tbodyDist) {
-        tbodyDist.innerHTML = '';
-        if (districtRequirements.length === 0) {
-            tbodyDist.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #16a34a; padding: 2rem;"><i class="fa-solid fa-circle-check"></i> No additional district procurement required. All shortfalls covered by safe PHC transfers!</td></tr>`;
-        } else {
-            districtRequirements.forEach(d => {
-                const tr = document.createElement('tr');
-                let badgeClass = d.status === 'CRITICAL' ? 'badge-critical' : (d.status === 'OUTDATED' ? 'badge-outdated' : 'badge-warning');
-
-                tr.innerHTML = `
-                    <td><strong>${esc(d.centreId)}</strong></td>
-                    <td><strong>${esc(d.medicineName)}</strong></td>
-                    <td>${d.totalShortfall} units</td>
-                    <td>${d.coveredBySurplus} units</td>
-                    <td><strong style="color:#dc2626; font-size: 0.95rem;">${d.remainingDistrictReq} units</strong></td>
-                    <td>
-                        <span class="badge ${badgeClass}">${esc(d.status)}</span>
-                        ${d.isOutdated ? '<br><small style="color:#7e22ce;">(Manual Audit Needed)</small>' : ''}
-                    </td>
-                `;
-                tbodyDist.appendChild(tr);
-            });
-        }
     }
 
-    // 9. Render Live Operational Alerts Feed
-    renderAlertsFeed(processedList, suggestedTransfers);
+    // 8. Render District Procurement Requirements Table (Filter remainingDistrictReq > 0)
+    const tbodyDist = document.getElementById('district-tbody');
+    tbodyDist.innerHTML = '';
 
-    // 10. Render Auxiliary Views
+    if (districtRequirements.length === 0) {
+        tbodyDist.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #16a34a; padding: 2rem;"><i class="fa-solid fa-circle-check"></i> No additional district procurement required. All shortfalls covered by safe PHC transfers!</td></tr>`;
+    } else {
+        districtRequirements.forEach(d => {
+            const tr = document.createElement('tr');
+            let badgeClass = d.status === 'CRITICAL' ? 'badge-critical' : (d.status === 'OUTDATED' ? 'badge-outdated' : 'badge-warning');
+
+            tr.innerHTML = `
+                <td><strong>${d.centreId}</strong></td>
+                <td><strong>${d.medicineName}</strong></td>
+                <td>${d.totalShortfall} units</td>
+                <td>${d.coveredBySurplus} units</td>
+                <td><strong style="color:#dc2626; font-size: 1rem;">${d.remainingDistrictReq} units</strong></td>
+                <td>
+                    <span class="badge ${badgeClass}">${d.status}</span>
+                    ${d.isOutdated ? '<br><small style="color:#7e22ce;">(Manual Audit Needed)</small>' : ''}
+                </td>
+            `;
+            tbodyDist.appendChild(tr);
+        });
+    }
+
+    // 9. Render Auxiliary Views
     renderBatchTable();
     renderFacilityRiskMatrix(processedList);
     renderSimulator(processedList);
@@ -1211,15 +1008,14 @@ function renderDashboard() {
  */
 function renderDistanceMatrix() {
     const table = document.getElementById('distance-matrix-table');
-    if (!table) return;
     const centres = Object.keys(distanceMatrix);
 
     let html = `<thead><tr><th>PHC Centre</th>`;
-    centres.forEach(c => { html += `<th>${esc(c)}</th>`; });
+    centres.forEach(c => { html += `<th>${c}</th>`; });
     html += `</tr></thead><tbody>`;
 
     centres.forEach(rowC => {
-        html += `<tr><td><strong>${esc(rowC)}</strong></td>`;
+        html += `<tr><td><strong>${rowC}</strong></td>`;
         centres.forEach(colC => {
             const dist = distanceMatrix[rowC][colC];
             if (rowC === colC) {
@@ -1255,7 +1051,7 @@ function populateDropdowns() {
         const isFilter = sel.id === 'filter-centre';
         sel.innerHTML = isFilter ? '<option value="ALL">All Health Centres</option>' : '';
         centres.forEach(c => {
-            sel.innerHTML += `<option value="${esc(c)}">${esc(c)} - ${esc(centreNames[c])}</option>`;
+            sel.innerHTML += `<option value="${c}">${c} - ${centreNames[c]}</option>`;
         });
     });
 
@@ -1265,13 +1061,13 @@ function populateDropdowns() {
         const isFilter = sel.id === 'filter-medicine';
         sel.innerHTML = isFilter ? '<option value="ALL">All Medicines</option>' : '';
         medicines.forEach(m => {
-            sel.innerHTML += `<option value="${esc(m)}">${esc(m)}</option>`;
+            sel.innerHTML += `<option value="${m}">${m}</option>`;
         });
     });
 }
 
 /**
- * DEMO SCENARIO LOADER (Fixed & Reliable)
+ * DEMO SCENARIO LOADER (Benchmark Benchmark)
  */
 function loadDemoScenario() {
     inventoryState = [
@@ -1313,43 +1109,7 @@ function loadDemoScenario() {
         }
     ];
 
-    batchState = [
-        {
-            id: 'DEMO-BAT-A',
-            batchNumber: 'BATCH-2026-P01',
-            centreId: 'Centre A',
-            medicineName: 'Paracetamol Syrup (100ml)',
-            quantity: 60,
-            expiryDate: getFutureDateString(180)
-        },
-        {
-            id: 'DEMO-BAT-C',
-            batchNumber: 'BATCH-2026-P02',
-            centreId: 'Centre C',
-            medicineName: 'Paracetamol Syrup (100ml)',
-            quantity: 200,
-            expiryDate: getFutureDateString(240)
-        },
-        {
-            id: 'BAT-003',
-            batchNumber: 'BATCH-2025-A99',
-            centreId: 'Centre A',
-            medicineName: 'Amoxicillin 500mg Capsules',
-            quantity: 30,
-            expiryDate: getPastDateString(10) // EXPIRED
-        },
-        {
-            id: 'BAT-004',
-            batchNumber: 'BATCH-2026-O15',
-            centreId: 'Centre C',
-            medicineName: 'ORS Electrolyte Packets',
-            quantity: 50,
-            expiryDate: getFutureDateString(35)
-        }
-    ];
-
     saveStateToStorage();
-    markDemoDataActive();
 
     document.getElementById('filter-search').value = '';
     document.getElementById('filter-centre').value = 'ALL';
@@ -1363,7 +1123,7 @@ function loadDemoScenario() {
 
     switchTab('tab-overview');
 
-    showToast('⚡ Benchmark Demo Scenario Loaded! (Centre A: 6 days stock, Centre C: 140 safe surplus)', 'warning');
+    showToast('⚡ Demonstration Scenario Loaded! Check Centre A (6 days left) and Centre C (140 safe surplus).', 'warning');
 }
 
 /**
@@ -1374,7 +1134,6 @@ function resetData() {
     batchState = JSON.parse(JSON.stringify(initialBatchSeed));
     localStorage.removeItem('aushadhi_inventory_state');
     localStorage.removeItem('aushadhi_batch_state');
-    markDemoDataActive();
 
     document.getElementById('filter-search').value = '';
     document.getElementById('filter-centre').value = 'ALL';
@@ -1389,7 +1148,7 @@ function resetData() {
 }
 
 /**
- * Toast Notification System with Safe Removal
+ * Toast Notification System
  */
 function showToast(message, type = 'info') {
     const container = document.getElementById('toast-container');
@@ -1399,7 +1158,7 @@ function showToast(message, type = 'info') {
     toast.className = `toast toast-${type}`;
     let iconClass = type === 'success' ? 'fa-circle-check' : (type === 'warning' ? 'fa-triangle-exclamation' : (type === 'error' ? 'fa-circle-xmark' : 'fa-info-circle'));
 
-    toast.innerHTML = `<i class="fa-solid ${iconClass}"></i> <span>${esc(message)}</span>`;
+    toast.innerHTML = `<i class="fa-solid ${iconClass}"></i> <span>${message}</span>`;
     container.appendChild(toast);
 
     setTimeout(() => {
@@ -1420,7 +1179,7 @@ function showToast(message, type = 'info') {
  */
 let pendingConfirmAction = null;
 function showConfirmModal(title, message, onConfirm) {
-    document.getElementById('confirm-title').innerHTML = `<i class="fa-solid fa-circle-question"></i> ${esc(title)}`;
+    document.getElementById('confirm-title').innerHTML = `<i class="fa-solid fa-circle-question"></i> ${title}`;
     document.getElementById('confirm-message').textContent = message;
     pendingConfirmAction = onConfirm;
 
@@ -1547,10 +1306,9 @@ document.addEventListener('DOMContentLoaded', () => {
             inventoryState[existingIdx].dailyConsumption = dailyConsumption;
             inventoryState[existingIdx].targetCoverageDays = targetCoverageDays;
             inventoryState[existingIdx].lastUpdated = lastUpdated;
-            recordHistory(inventoryState[existingIdx], 0, lastUpdated);
             showToast(`Updated stock record for ${medicineName} at ${centreId}.`, 'success');
         } else {
-            const newItem = {
+            inventoryState.push({
                 id: `INV-${Date.now()}`,
                 centreId,
                 medicineName,
@@ -1558,13 +1316,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 dailyConsumption,
                 targetCoverageDays,
                 lastUpdated
-            };
-            recordHistory(newItem, 0, lastUpdated);
-            inventoryState.push(newItem);
+            });
             showToast(`Added new stock record for ${medicineName} at ${centreId}.`, 'success');
         }
 
-        markCustomDataActive();
         saveStateToStorage();
         populateDropdowns();
         renderDashboard();
@@ -1617,7 +1372,6 @@ document.addEventListener('DOMContentLoaded', () => {
             expiryDate
         });
 
-        markCustomDataActive();
         saveStateToStorage();
         renderDashboard();
         modalBatch.classList.remove('open');
