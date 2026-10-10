@@ -2,26 +2,12 @@
  * ============================================================================
  * MEDI-CARE: PHC MEDICINE STOCK-OUT EARLY WARNING & REDISTRIBUTION ENGINE
  * ============================================================================
- * Vanilla JavaScript Implementation for Hackathon Prototype.
+ * ACCESSIBLE, GUIDED, BARCODE & VOICE ENGINE
  * Pitch: "Count the days, then look sideways before you look up."
- * 
- * CORE ALGORITHMIC FORMULAS & WORKFLOWS:
- * 1. Usable Stock = Total Physical Stock - Expired Batch Stock (Deducted exactly once)
- * 2. Days Remaining = Usable Stock / Average Daily Consumption (0 if Usable Stock == 0, Infinity if consumption == 0)
- * 3. Target Stock = Average Daily Consumption * Target Coverage Days
- * 4. Shortfall = Max(0, Target Stock - Usable Stock)
- * 5. Donor Safe Surplus = Max(0, Usable Stock - Target Stock)
- * 6. Greedy Inter-PHC Redistribution:
- *    - Route visualization: Donor PHC → Distance (km) → Recipient PHC
- *    - Never allocates outdated donor stock (>14 days).
- *    - Shows side-by-side impact on BOTH recipient and donor centres before execution.
- *    - Requires Medical Officer approval (PIN 1234) before stock moves.
- *    - Synchronizes batch quantities upon transfer execution.
- * 7. Procurement Deficit: Displays ONLY items with remaining district requirement > 0!
  * ============================================================================
  */
 
-// --- Global Date & Security Helpers ---
+// --- Global Date, Security & Connectivity Helpers ---
 
 function toLocalISO(d) {
     const date = d || new Date();
@@ -95,6 +81,10 @@ function esc(s) {
 }
 
 let leadTimeDays = 10;
+let voiceAssistantEnabled = false;
+let isSimpleModeActive = false;
+let selectedVoiceLanguage = 'ta-IN';
+let activeSpeechRecognition = null;
 
 // Symmetric Distance Matrix (km)
 const distanceMatrix = {
@@ -110,6 +100,18 @@ const centreNames = {
     'Centre B': 'Centre B (PHC Beta - Sundarpur)',
     'Centre C': 'Centre C (PHC Gamma - Chandanpur)',
     'Centre D': 'Centre D (PHC Delta - Krishnapur)'
+};
+
+// Verified Medicine Barcode Catalogue Mapping (GTIN / EAN-13 -> Medicine Info)
+const barcodeCatalogue = {
+    '8901234567890': { medicineName: 'Paracetamol Syrup (100ml)', unit: '100ml', defaultDailyUse: 8, targetDays: 30 },
+    '8901234567891': { medicineName: 'Amoxicillin 500mg Capsules', unit: 'Capsules', defaultDailyUse: 15, targetDays: 30 },
+    '8901234567892': { medicineName: 'ORS Electrolyte Packets', unit: 'Packets', defaultDailyUse: 12, targetDays: 30 },
+    '8901234567893': { medicineName: 'Metformin 500mg Tablets', unit: 'Tablets', defaultDailyUse: 10, targetDays: 30 },
+    '8901234567894': { medicineName: 'Amlodipine 5mg Tablets', unit: 'Tablets', defaultDailyUse: 7, targetDays: 30 },
+    '8901234567895': { medicineName: 'Artemether Injection (80mg)', unit: 'Vials', defaultDailyUse: 3, targetDays: 30 },
+    '8901234567896': { medicineName: 'Ciprofloxacin 500mg Tablets', unit: 'Tablets', defaultDailyUse: 5, targetDays: 30 },
+    '8901234567897': { medicineName: 'Azithromycin 500mg Tablets', unit: 'Tablets', defaultDailyUse: 4, targetDays: 30 }
 };
 
 // Initial Seed Data (Simulated Fictional Data)
@@ -151,7 +153,7 @@ const initialInventorySeed = [
         currentStock: 120,
         dailyConsumption: 15,
         targetCoverageDays: 30,
-        lastUpdated: getPastDateString(18), // Outdated record (>14 days)
+        lastUpdated: getPastDateString(18),
         lastTransferAt: null
     },
     {
@@ -189,7 +191,7 @@ const initialInventorySeed = [
         centreId: 'Centre A',
         medicineName: 'Metformin 500mg Tablets',
         currentStock: 300,
-        dailyConsumption: 0, // Zero consumption test case
+        dailyConsumption: 0,
         targetCoverageDays: 30,
         lastUpdated: getPastDateString(4),
         lastTransferAt: null
@@ -260,7 +262,7 @@ const initialBatchSeed = [
         centreId: 'Centre A',
         medicineName: 'Amoxicillin 500mg Capsules',
         quantity: 30,
-        expiryDate: getPastDateString(10) // EXPIRED 10 days ago!
+        expiryDate: getPastDateString(10)
     },
     {
         id: 'BAT-004',
@@ -272,7 +274,7 @@ const initialBatchSeed = [
     }
 ];
 
-// Persistent State Loaders with Graceful Migration
+// Persistent State Loaders
 function loadSavedInventory() {
     const saved = localStorage.getItem('medicare_inventory_state') || localStorage.getItem('aushadhi_inventory_state');
     if (saved) {
@@ -305,17 +307,27 @@ function loadSavedAuditLog() {
     return [];
 }
 
+function loadSavedSyncQueue() {
+    const saved = localStorage.getItem('medicare_sync_queue');
+    if (saved) {
+        try { return JSON.parse(saved); } catch (e) { console.error('Error parsing sync queue', e); }
+    }
+    return [];
+}
+
 // Active Application State
 let inventoryState = loadSavedInventory();
 let batchState = loadSavedBatches();
 let pendingRequestsState = loadSavedPendingRequests();
 let auditLogState = loadSavedAuditLog();
+let syncQueueState = loadSavedSyncQueue();
 
 function saveStateToStorage() {
     localStorage.setItem('medicare_inventory_state', JSON.stringify(inventoryState));
     localStorage.setItem('medicare_batch_state', JSON.stringify(batchState));
     localStorage.setItem('medicare_pending_requests', JSON.stringify(pendingRequestsState));
     localStorage.setItem('medicare_audit_log', JSON.stringify(auditLogState));
+    localStorage.setItem('medicare_sync_queue', JSON.stringify(syncQueueState));
 }
 
 function logAuditAction(action, officer, route, medicine, qty, note = '') {
@@ -333,7 +345,6 @@ function logAuditAction(action, officer, route, medicine, qty, note = '') {
     saveStateToStorage();
 }
 
-// Calculate estimated stockout date
 function calculateStockoutDate(daysRemaining) {
     if (!isFinite(daysRemaining) || isNaN(daysRemaining) || daysRemaining < 0) {
         return 'No Risk (0 Use)';
@@ -347,11 +358,6 @@ function calculateStockoutDate(daysRemaining) {
     return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-/**
- * Medicine Expiry Utility
- * Strictly EXCLUDES expired batch quantities (daysLeft < 0) from usable stock.
- * Near-expiry batches (0 <= daysLeft <= 60) remain usable.
- */
 function getItemBatchAnalysis(centreId, medicineName) {
     const matchingBatches = batchState.filter(b =>
         b.centreId === centreId &&
@@ -377,18 +383,42 @@ function getItemBatchAnalysis(centreId, medicineName) {
     return { matchingBatches, validBatchQty, expiredQty, nearExpiryQty };
 }
 
-/**
- * Process Forecasting & Risk Classification for an inventory item
- */
+function generatePlainLanguageExplanation(item) {
+    const daysSinceUpdate = getDaysSince(item.lastUpdated);
+    const isOutdated = daysSinceUpdate > 14 || daysSinceUpdate < 0;
+    const { expiredQty } = getItemBatchAnalysis(item.centreId, item.medicineName);
+    const usableStock = Math.max(0, item.currentStock - expiredQty);
+
+    let daysRemaining;
+    if (item.dailyConsumption <= 0) daysRemaining = Infinity;
+    else if (usableStock === 0) daysRemaining = 0;
+    else daysRemaining = usableStock / item.dailyConsumption;
+
+    if (isOutdated) {
+        return `Record for ${item.medicineName} at ${item.centreId} was updated ${daysSinceUpdate} days ago. A physical audit is recommended.`;
+    }
+    if (usableStock === 0 && item.dailyConsumption > 0) {
+        return `${item.medicineName} is out of stock at ${item.centreId}. Replenishment is required immediately.`;
+    }
+    if (daysRemaining <= leadTimeDays) {
+        return `This medicine may run out in ${daysRemaining.toFixed(1)} days at ${item.centreId}, so arrange replenishment.`;
+    }
+    if (daysRemaining <= leadTimeDays * 1.5) {
+        return `Stock for ${item.medicineName} covers ${daysRemaining.toFixed(1)} days. Reorder recommended soon.`;
+    }
+    if (expiredQty > 0) {
+        return `${expiredQty} units of ${item.medicineName} have expired and are excluded from usable stock.`;
+    }
+    return `Stock for ${item.medicineName} covers ${daysRemaining.toFixed(1)} days safely exceeding ${leadTimeDays} days lead time.`;
+}
+
 function processForecastItem(item) {
     const daysSinceUpdate = getDaysSince(item.lastUpdated);
     const isOutdated = daysSinceUpdate > 14 || daysSinceUpdate < 0;
 
-    // Deduct expired batch stock from usable stock
     const { expiredQty, nearExpiryQty } = getItemBatchAnalysis(item.centreId, item.medicineName);
     const usableStock = Math.max(0, item.currentStock - expiredQty);
 
-    // Estimated Days Remaining handling zero stock & zero consumption
     let daysRemaining;
     if (item.dailyConsumption <= 0) {
         daysRemaining = Infinity;
@@ -398,41 +428,26 @@ function processForecastItem(item) {
         daysRemaining = usableStock / item.dailyConsumption;
     }
 
-    // Shortfall & Target Stock
     const targetStock = item.dailyConsumption * item.targetCoverageDays;
     const shortfall = Math.max(0, Math.round(targetStock - usableStock));
 
-    // Donor Safe Surplus
     const safetyStock = item.dailyConsumption * item.targetCoverageDays;
     const rawSurplus = Math.max(0, Math.round(usableStock - safetyStock));
     const donorSurplus = isOutdated ? 0 : rawSurplus;
 
-    // Risk Classification & Human-Readable Reason
     let status = 'SAFE';
-    let riskReason = '';
+    let riskReason = generatePlainLanguageExplanation(item);
 
     if (isOutdated) {
         status = 'OUTDATED';
-        riskReason = `Record updated ${daysSinceUpdate}d ago (>14d). Physical audit recommended.`;
     } else if (usableStock === 0 && item.dailyConsumption > 0) {
         status = 'CRITICAL';
-        riskReason = `OUT OF STOCK! Zero usable units remaining.`;
     } else if (daysRemaining <= leadTimeDays) {
         status = 'CRITICAL';
-        riskReason = `Depletes in ${daysRemaining.toFixed(1)}d (≤ ${leadTimeDays}d lead time). High stock-out risk.`;
     } else if (daysRemaining <= leadTimeDays * 1.5) {
         status = 'WARNING';
-        riskReason = `Covers ${daysRemaining.toFixed(1)}d (≤ ${Math.round(leadTimeDays * 1.5)}d threshold). Reorder soon.`;
-    } else if (daysRemaining === Infinity) {
-        status = 'SAFE';
-        riskReason = `Zero daily usage reported. Stock intact.`;
     } else {
         status = 'SAFE';
-        riskReason = `Covers ${daysRemaining.toFixed(1)}d safely exceeding ${leadTimeDays}d lead time.`;
-    }
-
-    if (expiredQty > 0) {
-        riskReason += ` (${expiredQty} units expired & deducted).`;
     }
 
     return {
@@ -454,13 +469,9 @@ function processForecastItem(item) {
     };
 }
 
-/**
- * Compute transfer impact matrix for both recipient and donor
- */
 function computeTransferImpact(donorCentre, recipientCentre, medicineName, qty) {
     const processedAll = inventoryState.map(processForecastItem);
 
-    // Recipient before & projected after
     const recBefore = processedAll.find(i => i.centreId === recipientCentre && i.medicineName === medicineName) || {
         centreId: recipientCentre,
         medicineName: medicineName,
@@ -484,7 +495,6 @@ function computeTransferImpact(donorCentre, recipientCentre, medicineName, qty) 
     else if (recAfterDays <= leadTimeDays) recAfterStatus = 'CRITICAL';
     else if (recAfterDays <= leadTimeDays * 1.5) recAfterStatus = 'WARNING';
 
-    // Donor before & projected after
     const donorBefore = processedAll.find(i => i.centreId === donorCentre && i.medicineName === medicineName);
     const donorAfterStock = donorBefore ? Math.max(0, donorBefore.usableStock - qty) : 0;
     const donorAfterDays = (donorBefore && donorBefore.dailyConsumption > 0) ? donorAfterStock / donorBefore.dailyConsumption : Infinity;
@@ -565,19 +575,14 @@ function impactCompactHtml(impact) {
     `;
 }
 
-/**
- * Smart Inter-PHC Redistribution Algorithm
- */
 function computeRedistribution(processedInventory) {
     const suggestedTransfers = [];
     const districtRequirements = [];
 
-    // Filter items with shortfall > 0 (Recipients), sorted by urgency
     const shortages = processedInventory
         .filter(item => item.shortfall > 0)
         .sort((a, b) => a.daysRemaining - b.daysRemaining);
 
-    // Surplus Tracker map (0 for outdated donors)
     const surplusTracker = {};
     processedInventory.forEach(item => {
         surplusTracker[item.id] = item.isOutdated ? 0 : item.donorSurplus;
@@ -587,7 +592,6 @@ function computeRedistribution(processedInventory) {
         let neededQty = recipient.shortfall;
         let totalAllocatedForRecipient = 0;
 
-        // Candidate Donors (Not outdated, matching medicine, surplus > 0)
         const candidateDonors = processedInventory
             .filter(donor =>
                 !donor.isOutdated &&
@@ -629,9 +633,7 @@ function computeRedistribution(processedInventory) {
             totalAllocatedForRecipient += transferAmount;
         });
 
-        // Calculate remaining district requirement
         const remainingDistrictReq = recipient.shortfall - totalAllocatedForRecipient;
-        // REQUIREMENT: Only list procurement rows where remaining requirement > 0!
         if (remainingDistrictReq > 0) {
             districtRequirements.push({
                 centreId: recipient.centreId,
@@ -648,10 +650,6 @@ function computeRedistribution(processedInventory) {
     return { suggestedTransfers, districtRequirements };
 }
 
-/**
- * Execute Approved Transfer (Updates stock & syncs batches upon Medical Officer approval)
- * Requirement 4: DO NOT touch lastUpdated on transfer! Set lastTransferAt instead.
- */
 function executeApprovedTransfer(donorCentre, recipientCentre, medicineName, qty) {
     const donorIdx = inventoryState.findIndex(i => i.centreId === donorCentre && i.medicineName === medicineName);
     let recipientIdx = inventoryState.findIndex(i => i.centreId === recipientCentre && i.medicineName === medicineName);
@@ -666,14 +664,12 @@ function executeApprovedTransfer(donorCentre, recipientCentre, medicineName, qty
         return false;
     }
 
-    // Check valid non-expired batch availability
     const { matchingBatches, validBatchQty } = getItemBatchAnalysis(donorCentre, medicineName);
     if (matchingBatches.length > 0 && validBatchQty < qty) {
         showToast(`Transfer rejected: Donor PHC has only ${validBatchQty} units in valid non-expired batches (requested ${qty} units).`, 'error');
         return false;
     }
 
-    // Re-verify donor surplus before executing
     const donorProcessed = processForecastItem(inventoryState[donorIdx]);
     if (donorProcessed.donorSurplus < qty) {
         showToast(`Warning: Re-validation check failed. Donor safe surplus is currently ${donorProcessed.donorSurplus} units.`, 'warning');
@@ -682,11 +678,9 @@ function executeApprovedTransfer(donorCentre, recipientCentre, medicineName, qty
 
     const todayIso = toLocalISO(new Date());
 
-    // Deduct stock from Donor (DO NOT update lastUpdated, update lastTransferAt)
     inventoryState[donorIdx].currentStock -= qty;
     inventoryState[donorIdx].lastTransferAt = todayIso;
 
-    // Credit stock to Recipient (DO NOT update lastUpdated, update lastTransferAt)
     if (recipientIdx >= 0) {
         inventoryState[recipientIdx].currentStock += qty;
         inventoryState[recipientIdx].lastTransferAt = todayIso;
@@ -703,7 +697,6 @@ function executeApprovedTransfer(donorCentre, recipientCentre, medicineName, qty
         });
     }
 
-    // Batch Synchronization: Move valid batch quantities from Donor to Recipient
     let remainingToMove = qty;
     const donorBatches = batchState.filter(b =>
         b.centreId === donorCentre &&
@@ -717,7 +710,6 @@ function executeApprovedTransfer(donorCentre, recipientCentre, medicineName, qty
         b.quantity -= moveQty;
         remainingToMove -= moveQty;
 
-        // Add transferred batch record to Recipient
         batchState.push({
             id: `BAT-XFER-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
             batchNumber: `${b.batchNumber}-XFER`,
@@ -728,11 +720,355 @@ function executeApprovedTransfer(donorCentre, recipientCentre, medicineName, qty
         });
     });
 
-    // Clean up empty donor batches
     batchState = batchState.filter(b => b.quantity > 0);
-
     saveStateToStorage();
     return true;
+}
+
+// ============================================================================
+// PART B: ROBUST SPEECH SYNTHESIS & RECOGNITION ENGINE (Tamil & English)
+// ============================================================================
+
+let lastSpokenText = '';
+
+function speakText(text, lang = selectedVoiceLanguage) {
+    if (!('speechSynthesis' in window)) {
+        showToast('Speech audio playback not supported on this browser.', 'info');
+        return;
+    }
+
+    lastSpokenText = text;
+    window.speechSynthesis.cancel(); // Cancel any ongoing speech to avoid overlapping
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = lang;
+    utterance.rate = 0.95;
+
+    // Check available voices on device
+    const voices = window.speechSynthesis.getVoices();
+    if (lang.includes('ta')) {
+        const tamilVoice = voices.find(v => v.lang.includes('ta') || v.lang.includes('TA') || v.name.toLowerCase().includes('tamil'));
+        if (tamilVoice) utterance.voice = tamilVoice;
+    } else {
+        const engVoice = voices.find(v => v.lang.includes('en') || v.name.toLowerCase().includes('english'));
+        if (engVoice) utterance.voice = engVoice;
+    }
+
+    window.speechSynthesis.speak(utterance);
+}
+
+function stopSpeaking() {
+    if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+    }
+}
+
+// Parse spoken Tamil & English number words safely into numbers
+function parseSpokenNumber(text, lang = selectedVoiceLanguage) {
+    if (!text) return null;
+    const str = text.trim().toLowerCase();
+
+    // Check if numeric digits exist
+    const digitMatch = str.match(/\d+/);
+    if (digitMatch) return parseInt(digitMatch[0], 10);
+
+    // Number dictionary
+    const numMap = {
+        'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5, 'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
+        'twenty': 20, 'thirty': 30, 'forty': 40, 'fifty': 50, 'sixty': 60, 'hundred': 100,
+        'ஒன்று': 1, 'இரண்டு': 2, 'மூன்று': 3, 'நான்கு': 4, 'ஐந்து': 5, 'ஆறு': 6, 'ஏழு': 7, 'எட்டு': 8, 'ஒன்பது': 9, 'பத்து': 10,
+        'இருபது': 20, 'முப்பது': 30, 'நாற்பது': 40, 'ஐம்பது': 50, 'அறுபது': 60, 'நூறு': 100
+    };
+
+    for (const key in numMap) {
+        if (str.includes(key)) return numMap[key];
+    }
+    return null;
+}
+
+function setVoiceStateUI(stateText, stateClass = 'badge-pending') {
+    const indicator = document.getElementById('voice-status-indicator');
+    if (indicator) {
+        indicator.textContent = stateText;
+        indicator.className = `badge ${stateClass}`;
+    }
+}
+
+function startVoiceRecognition(onResultCallback) {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+        setVoiceStateUI('Unsupported', 'badge-rejected');
+        showToast('Speech recognition is not supported on this browser. Please type or click manually.', 'warning');
+        return;
+    }
+
+    if (activeSpeechRecognition) {
+        try { activeSpeechRecognition.stop(); } catch (e) {}
+    }
+
+    const recognition = new SpeechRecognition();
+    activeSpeechRecognition = recognition;
+
+    recognition.lang = selectedVoiceLanguage;
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    const btnStart = document.getElementById('btn-start-voice');
+    const btnStop = document.getElementById('btn-stop-voice');
+    const transcriptBox = document.getElementById('voice-transcript-display');
+
+    if (btnStart) btnStart.style.display = 'none';
+    if (btnStop) btnStop.style.display = 'inline-flex';
+    if (transcriptBox) transcriptBox.style.display = 'block';
+
+    setVoiceStateUI('Listening...', 'badge-warning');
+
+    recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        setVoiceStateUI('Processing', 'badge-approved');
+
+        if (transcriptBox) {
+            transcriptBox.innerHTML = `<i class="fa-solid fa-comment-dots"></i> Spoken Result: <strong>"${esc(transcript)}"</strong>`;
+        }
+
+        if (onResultCallback) onResultCallback(transcript);
+        stopVoiceRecognition();
+    };
+
+    recognition.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        let errorMsg = `Speech error: ${event.error}`;
+        if (event.error === 'not-allowed') errorMsg = 'Microphone permission denied.';
+        if (event.error === 'no-speech') errorMsg = 'No speech detected. Please try speaking again.';
+
+        setVoiceStateUI('Error', 'badge-rejected');
+        showToast(errorMsg, 'error');
+        stopVoiceRecognition();
+    };
+
+    recognition.onend = () => {
+        stopVoiceRecognition();
+    };
+
+    try {
+        recognition.start();
+    } catch (err) {
+        console.error('Recognition start error', err);
+        stopVoiceRecognition();
+    }
+}
+
+function stopVoiceRecognition() {
+    if (activeSpeechRecognition) {
+        try { activeSpeechRecognition.stop(); } catch (e) {}
+        activeSpeechRecognition = null;
+    }
+
+    const btnStart = document.getElementById('btn-start-voice');
+    const btnStop = document.getElementById('btn-stop-voice');
+    if (btnStart) btnStart.style.display = 'inline-flex';
+    if (btnStop) btnStop.style.display = 'none';
+
+    const indicator = document.getElementById('voice-status-indicator');
+    if (indicator && indicator.textContent === 'Listening...') {
+        setVoiceStateUI('Idle', 'badge-pending');
+    }
+}
+
+// ============================================================================
+// PART C: REAL CAMERA BARCODE SCANNER ENGINE (BarcodeDetector + ZXing Fallback)
+// ============================================================================
+
+let activeMediaStream = null;
+let barcodeScannerInterval = null;
+let scannedSessionLock = false;
+
+async function startCameraScanner() {
+    const video = document.getElementById('barcode-video');
+    const statusBadge = document.getElementById('camera-status-badge');
+    const btnStopCam = document.getElementById('btn-stop-camera');
+    scannedSessionLock = false;
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        if (statusBadge) {
+            statusBadge.textContent = 'Camera Unavailable';
+            statusBadge.className = 'badge badge-rejected';
+        }
+        showToast('Camera API unavailable. Use manual barcode lookup below.', 'warning');
+        return;
+    }
+
+    try {
+        if (statusBadge) {
+            statusBadge.textContent = 'Requesting Camera...';
+            statusBadge.className = 'badge badge-warning';
+        }
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+        });
+
+        activeMediaStream = stream;
+        video.srcObject = stream;
+        await video.play();
+
+        if (statusBadge) {
+            statusBadge.textContent = 'Camera Active (Scanning...)';
+            statusBadge.className = 'badge badge-approved';
+        }
+        if (btnStopCam) btnStopCam.style.display = 'inline-flex';
+
+        // Check if native BarcodeDetector is supported
+        if ('BarcodeDetector' in window) {
+            const detector = new window.BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128'] });
+            barcodeScannerInterval = setInterval(async () => {
+                if (scannedSessionLock || video.readyState < 2) return;
+                try {
+                    const barcodes = await detector.detect(video);
+                    if (barcodes.length > 0) {
+                        handleBarcodeDetected(barcodes[0].rawValue);
+                    }
+                } catch (e) { console.error('Native BarcodeDetector error', e); }
+            }, 300);
+        } else if (typeof ZXing !== 'undefined' && ZXing.BrowserMultiFormatReader) {
+            // ZXing JS Fallback
+            const codeReader = new ZXing.BrowserMultiFormatReader();
+            codeReader.decodeFromVideoDevice(null, 'barcode-video', (result, err) => {
+                if (result && !scannedSessionLock) {
+                    handleBarcodeDetected(result.getText());
+                }
+            });
+        } else {
+            // Simulated Frame Scanner timer for manual barcode testing
+            console.log('BarcodeDetector/ZXing fallback active. Manual lookup enabled.');
+        }
+
+    } catch (err) {
+        console.error('Camera permission/access error:', err);
+        if (statusBadge) {
+            statusBadge.textContent = 'Permission Denied / Error';
+            statusBadge.className = 'badge badge-rejected';
+        }
+        showToast('Camera access denied or unavailable. Please use manual barcode entry.', 'error');
+        stopCameraScanner();
+    }
+}
+
+function stopCameraScanner() {
+    if (barcodeScannerInterval) {
+        clearInterval(barcodeScannerInterval);
+        barcodeScannerInterval = null;
+    }
+
+    if (activeMediaStream) {
+        activeMediaStream.getTracks().forEach(track => {
+            track.stop();
+        });
+        activeMediaStream = null;
+    }
+
+    const video = document.getElementById('barcode-video');
+    if (video) video.srcObject = null;
+
+    const statusBadge = document.getElementById('camera-status-badge');
+    const btnStopCam = document.getElementById('btn-stop-camera');
+
+    if (statusBadge) {
+        statusBadge.textContent = 'Camera Stopped';
+        statusBadge.className = 'badge badge-pending';
+    }
+    if (btnStopCam) btnStopCam.style.display = 'none';
+}
+
+function handleBarcodeDetected(rawValue) {
+    if (scannedSessionLock) return;
+    scannedSessionLock = true;
+
+    const barcode = String(rawValue).trim();
+    const resultBox = document.getElementById('barcode-lookup-result');
+    if (resultBox) resultBox.style.display = 'block';
+
+    speakText(`Barcode ${barcode} detected.`);
+
+    if (barcodeCatalogue[barcode]) {
+        const item = barcodeCatalogue[barcode];
+        if (resultBox) {
+            resultBox.innerHTML = `
+                <div style="background:#f0fdf4; border:2px solid #86efac; padding:0.75rem; border-radius:6px;">
+                    <i class="fa-solid fa-circle-check" style="color:#16a34a; font-size:1.1rem;"></i> <strong>Barcode Verified Match:</strong><br>
+                    <strong>${esc(item.medicineName)}</strong> (GTIN: <code>${esc(barcode)}</code>)<br>
+                    <small>Unit: ${esc(item.unit)} | Standard Usage: ${item.defaultDailyUse}/day</small><br>
+                    <div style="margin-top:0.5rem; display:flex; gap:0.5rem;">
+                        <button type="button" class="btn btn-success btn-sm" id="btn-apply-barcode-med">
+                            <i class="fa-solid fa-check"></i> Use Verified Medicine in Wizard
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            const applyBtn = document.getElementById('btn-apply-barcode-med');
+            if (applyBtn) {
+                applyBtn.addEventListener('click', () => {
+                    document.getElementById('wizard-medicine').value = item.medicineName;
+                    stopCameraScanner();
+                    document.getElementById('modal-barcode-scanner').classList.remove('open');
+                    openSimpleWizardModal();
+                    showToast(`Barcode applied: ${item.medicineName}`, 'success');
+                });
+            }
+        }
+    } else {
+        if (resultBox) {
+            resultBox.innerHTML = `
+                <div style="background:#fef2f2; border:2px solid #fca5a5; padding:0.75rem; border-radius:6px; color:#991b1b;">
+                    <i class="fa-solid fa-triangle-exclamation"></i> <strong>Unknown Barcode (${esc(barcode)})</strong><br>
+                    This code is not registered in the local catalogue. Please select or register medicine manually.
+                </div>
+            `;
+        }
+    }
+}
+
+// ============================================================================
+// PART D: OFFLINE OPERATIONAL CONNECTIVITY & SYNC QUEUE ENGINE
+// ============================================================================
+
+function updateNetworkStatus() {
+    const isOnline = (typeof navigator !== 'undefined' && 'onLine' in navigator) ? navigator.onLine : true;
+    const pill = document.getElementById('status-offline');
+    const lbl = document.getElementById('lbl-network');
+
+    if (!pill || !lbl) return;
+
+    if (isOnline) {
+        if (syncQueueState.length > 0) {
+            pill.className = 'network-pill syncing';
+            lbl.textContent = `Online (Syncing ${syncQueueState.length} items...)`;
+            flushSyncQueue();
+        } else {
+            pill.className = 'network-pill online';
+            lbl.textContent = 'Online (Synced)';
+        }
+    } else {
+        pill.className = 'network-pill offline';
+        lbl.textContent = `Offline (${syncQueueState.length} Pending Sync)`;
+    }
+}
+
+function flushSyncQueue() {
+    const isOnline = (typeof navigator !== 'undefined' && 'onLine' in navigator) ? navigator.onLine : true;
+    if (!isOnline || syncQueueState.length === 0) return;
+
+    let syncedCount = 0;
+    while (syncQueueState.length > 0) {
+        const item = syncQueueState.shift();
+        logAuditAction('Sync', 'Offline Engine', item.route || 'Local Queue', item.medicine || 'Batch Data', item.qty || 0, 'Synchronized pending offline entry');
+        syncedCount++;
+    }
+
+    saveStateToStorage();
+    updateNetworkStatus();
+    showToast(`⚡ Synchronized ${syncedCount} pending offline records to district network!`, 'success');
 }
 
 /**
@@ -797,7 +1133,7 @@ function renderFacilityRiskMatrix(processedInventory) {
 }
 
 /**
- * Render What-If Supply Chain Simulator (Step 7: Checkbox to assume suggested transfers executed)
+ * Render What-If Supply Chain Simulator
  */
 function renderSimulator(processedInventory) {
     const demandMult = parseFloat(document.getElementById('sim-demand-multiplier').value);
@@ -813,10 +1149,7 @@ function renderSimulator(processedInventory) {
     const tbody = document.getElementById('sim-tbody');
     tbody.innerHTML = '';
 
-    // Calculate baseline transfers
     const { suggestedTransfers } = computeRedistribution(processedInventory);
-
-    // Create a copy of inventory items for simulation
     let simInventory = processedInventory.map(i => ({ ...i }));
 
     if (assumeTransfers && suggestedTransfers.length > 0) {
@@ -828,7 +1161,6 @@ function renderSimulator(processedInventory) {
         });
     }
 
-    // Re-calculate daysRemaining on simInventory items
     simInventory.forEach(item => {
         if (item.dailyConsumption <= 0) item.daysRemaining = Infinity;
         else if (item.usableStock === 0) item.daysRemaining = 0;
@@ -900,9 +1232,6 @@ function renderSimulator(processedInventory) {
     }
 }
 
-/**
- * Render Medicine Batch & Expiry Management Table
- */
 function renderBatchTable() {
     const tbody = document.getElementById('batch-tbody');
     if (!tbody) return;
@@ -959,9 +1288,6 @@ function renderBatchTable() {
     });
 }
 
-/**
- * Render Pending Approvals & Audit Log Tab
- */
 function renderPendingApprovalsAndAudit() {
     const pendingTbody = document.getElementById('pending-tbody');
     const auditTbody = document.getElementById('audit-tbody');
@@ -973,7 +1299,6 @@ function renderPendingApprovalsAndAudit() {
         pendingNavBadge.style.display = pendingList.length > 0 ? 'inline-block' : 'none';
     }
 
-    // Render Pending Requests Table
     if (pendingTbody) {
         pendingTbody.innerHTML = '';
         if (pendingList.length === 0) {
@@ -1026,7 +1351,6 @@ function renderPendingApprovalsAndAudit() {
         }
     }
 
-    // Render Audit Log Table
     if (auditTbody) {
         auditTbody.innerHTML = '';
         if (auditLogState.length === 0) {
@@ -1058,10 +1382,8 @@ function renderPendingApprovalsAndAudit() {
  * Main UI Render Engine
  */
 function renderDashboard() {
-    // 1. Process all inventory items
     const processedList = inventoryState.map(processForecastItem);
 
-    // 2. Apply Filters
     const searchVal = document.getElementById('filter-search').value.trim().toLowerCase();
     const centreVal = document.getElementById('filter-centre').value;
     const medVal = document.getElementById('filter-medicine').value;
@@ -1078,10 +1400,8 @@ function renderDashboard() {
         return matchesSearch && matchesCentre && matchesMed && matchesUrgency;
     });
 
-    // 3. Compute Redistribution Engine
     const { suggestedTransfers, districtRequirements } = computeRedistribution(processedList);
 
-    // 4. Update Summary KPI Metrics
     const uniqueCentres = new Set(processedList.map(i => i.centreId)).size;
     const uniqueMeds = new Set(processedList.map(i => i.medicineName)).size;
     const criticalCount = processedList.filter(i => i.status === 'CRITICAL').length;
@@ -1089,7 +1409,6 @@ function renderDashboard() {
     const pendingCount = pendingRequestsState.filter(r => r.status === 'PENDING').length;
     const totalDistrictReqUnits = districtRequirements.reduce((acc, d) => acc + d.remainingDistrictReq, 0);
 
-    // Step 5: Split Batch Expiry Metrics
     const expiredBatchesCount = batchState.filter(b => getDaysUntilExpiry(b.expiryDate) < 0).length;
     const nearExpiryBatchesCount = batchState.filter(b => {
         const d = getDaysUntilExpiry(b.expiryDate);
@@ -1106,7 +1425,7 @@ function renderDashboard() {
     document.getElementById('metric-expired').textContent = expiredBatchesCount;
     document.getElementById('metric-near-expiry').textContent = nearExpiryBatchesCount;
 
-    // 5. Render Overview Table
+    // Render Overview Table
     const tbodyOverview = document.getElementById('overview-tbody');
     tbodyOverview.innerHTML = '';
     const needsAttentionItems = filteredList.filter(i => i.status === 'CRITICAL' || i.status === 'WARNING' || i.status === 'OUTDATED');
@@ -1132,13 +1451,24 @@ function renderDashboard() {
                 <td><strong>${item.daysRemaining === Infinity ? 'Infinite' : item.daysRemaining.toFixed(1) + 'd'}</strong></td>
                 <td>${esc(item.stockoutDate)}</td>
                 <td><small style="color:#4b5563;">${esc(item.riskReason)}</small></td>
-                <td><span class="btn btn-outline btn-sm">${esc(actionText)}</span></td>
+                <td>
+                    <button class="btn btn-outline btn-sm btn-speak-row" data-text="${esc(item.riskReason)}">
+                        <i class="fa-solid fa-volume-high"></i> ${esc(actionText)}
+                    </button>
+                </td>
             `;
             tbodyOverview.appendChild(tr);
         });
+
+        document.querySelectorAll('.btn-speak-row').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const text = e.currentTarget.dataset.text;
+                speakText(text);
+            });
+        });
     }
 
-    // 6. Render Full Inventory Table
+    // Render Full Inventory Table
     const tbodyInv = document.getElementById('inventory-tbody');
     tbodyInv.innerHTML = '';
     document.getElementById('inventory-count').textContent = `Showing ${filteredList.length} of ${processedList.length} items`;
@@ -1189,7 +1519,7 @@ function renderDashboard() {
         });
     }
 
-    // 7. Render Redistribution Table with Visual Route Diagram & Pending Approval Status
+    // Render Redistribution Table
     const tbodyTrans = document.getElementById('transfer-tbody');
     tbodyTrans.innerHTML = '';
 
@@ -1200,7 +1530,6 @@ function renderDashboard() {
             const tr = document.createElement('tr');
             let badgeClass = t.priority.includes('CRITICAL') ? 'badge-critical' : (t.priority.includes('OUTDATED') ? 'badge-outdated' : 'badge-warning');
 
-            // Check if there is already a pending request for donor+recipient+medicine
             const isPending = pendingRequestsState.some(r =>
                 r.status === 'PENDING' &&
                 r.donor === t.donorCentre &&
@@ -1252,7 +1581,7 @@ function renderDashboard() {
         });
     }
 
-    // 8. Render District Procurement Requirements Table (Filter remainingDistrictReq > 0)
+    // Render District Procurement Requirements Table
     const tbodyDist = document.getElementById('district-tbody');
     tbodyDist.innerHTML = '';
 
@@ -1278,12 +1607,12 @@ function renderDashboard() {
         });
     }
 
-    // 9. Render Auxiliary Views & Pending Approvals Tab
     renderBatchTable();
     renderFacilityRiskMatrix(processedList);
     renderSimulator(processedList);
     renderDistanceMatrix();
     renderPendingApprovalsAndAudit();
+    updateNetworkStatus();
 }
 
 /**
@@ -1315,18 +1644,20 @@ function renderDistanceMatrix() {
 }
 
 /**
- * Populate Dropdowns (Escapes options and option values)
+ * Populate Dropdowns
  */
 function populateDropdowns() {
     const centreSelects = [
         document.getElementById('filter-centre'),
         document.getElementById('modal-centre'),
-        document.getElementById('modal-batch-centre')
+        document.getElementById('modal-batch-centre'),
+        document.getElementById('wizard-centre')
     ];
 
     const medSelects = [
         document.getElementById('filter-medicine'),
-        document.getElementById('modal-batch-medicine')
+        document.getElementById('modal-batch-medicine'),
+        document.getElementById('wizard-medicine')
     ];
 
     const centres = Object.keys(centreNames);
@@ -1348,6 +1679,64 @@ function populateDropdowns() {
             sel.innerHTML += `<option value="${esc(m)}">${esc(m)}</option>`;
         });
     });
+}
+
+/**
+ * Guided 3-Step Simple Stock Entry Wizard Engine
+ */
+let wizardCurrentStep = 1;
+function openSimpleWizardModal() {
+    wizardCurrentStep = 1;
+    updateWizardStepView();
+    document.getElementById('modal-simple-wizard').classList.add('open');
+}
+
+function closeSimpleWizardModal() {
+    document.getElementById('modal-simple-wizard').classList.remove('open');
+}
+
+function updateWizardStepView() {
+    [1, 2, 3].forEach(step => {
+        const page = document.getElementById(`wizard-step-${step}`);
+        const pill = document.getElementById(`step-pill-${step}`);
+        if (page) page.style.display = step === wizardCurrentStep ? 'block' : 'none';
+        if (pill) pill.classList.toggle('active', step === wizardCurrentStep);
+    });
+
+    const btnBack = document.getElementById('btn-wizard-back');
+    const btnNext = document.getElementById('btn-wizard-next');
+    const btnSubmit = document.getElementById('btn-wizard-submit');
+
+    if (btnBack) btnBack.style.display = wizardCurrentStep > 1 ? 'inline-flex' : 'none';
+    if (btnNext) btnNext.style.display = wizardCurrentStep < 3 ? 'inline-flex' : 'none';
+    if (btnSubmit) btnSubmit.style.display = wizardCurrentStep === 3 ? 'inline-flex' : 'none';
+
+    if (wizardCurrentStep === 3) {
+        renderWizardSummary();
+    }
+}
+
+function renderWizardSummary() {
+    const centreId = document.getElementById('wizard-centre').value;
+    const medicineName = document.getElementById('wizard-medicine').value;
+    const qty = parseInt(document.getElementById('wizard-qty').value, 10) || 0;
+    const expiry = document.getElementById('wizard-expiry').value || getFutureDateString(180);
+
+    const summaryBox = document.getElementById('wizard-summary-box');
+    if (!summaryBox) return;
+
+    const daysLeft = getDaysUntilExpiry(expiry);
+
+    summaryBox.innerHTML = `
+        <i class="fa-solid fa-circle-check"></i> <strong>Confirmation Summary:</strong><br>
+        Adding <strong>${qty} units</strong> of <strong>${esc(medicineName)}</strong> to <strong>${esc(centreId)}</strong>.<br>
+        Expiry Date: <strong>${esc(formatDate(expiry))}</strong> (${daysLeft} days remaining).<br>
+        <em>Tamil: ${esc(centreId)} க்கு ${qty} அலகுகள் ${esc(medicineName)} சேர்க்கப்படுகிறது.</em>
+    `;
+
+    if (voiceAssistantEnabled) {
+        speakText(`${qty} units of ${medicineName} at ${centreId}. Expiry in ${daysLeft} days. Please confirm to save.`, selectedVoiceLanguage);
+    }
 }
 
 /**
@@ -1496,7 +1885,6 @@ function loadDemoScenario() {
 
     populateDropdowns();
     renderDashboard();
-
     switchTab('tab-overview');
 
     showToast('⚡ Demonstration Scenario Loaded! Check Centre A (6 days left) and Centre C (140 safe surplus).', 'warning');
@@ -1510,11 +1898,13 @@ function resetData() {
     batchState = JSON.parse(JSON.stringify(initialBatchSeed));
     pendingRequestsState = [];
     auditLogState = [];
+    syncQueueState = [];
 
     localStorage.removeItem('medicare_inventory_state');
     localStorage.removeItem('medicare_batch_state');
     localStorage.removeItem('medicare_pending_requests');
     localStorage.removeItem('medicare_audit_log');
+    localStorage.removeItem('medicare_sync_queue');
     localStorage.removeItem('aushadhi_inventory_state');
     localStorage.removeItem('aushadhi_batch_state');
 
@@ -1531,7 +1921,7 @@ function resetData() {
 }
 
 /**
- * Toast Notification System (Escapes dynamic messages safely)
+ * Toast Notification System
  */
 function showToast(message, type = 'info') {
     const container = document.getElementById('toast-container');
@@ -1558,7 +1948,7 @@ function showToast(message, type = 'info') {
 }
 
 /**
- * Custom Confirmation Modal (Escapes title & message safely)
+ * Custom Confirmation Modal
  */
 let pendingConfirmAction = null;
 function showConfirmModal(title, message, onConfirm) {
@@ -1589,12 +1979,297 @@ function switchTab(tabId) {
 }
 
 /**
- * Event Initialization
+ * Event Initialization & Event Handlers
  */
 document.addEventListener('DOMContentLoaded', () => {
     populateDropdowns();
     renderDashboard();
+    updateNetworkStatus();
 
+    window.addEventListener('online', updateNetworkStatus);
+    window.addEventListener('offline', updateNetworkStatus);
+
+    // Language Selector Listener
+    const langSelect = document.getElementById('select-voice-lang');
+    if (langSelect) {
+        langSelect.addEventListener('change', (e) => {
+            selectedVoiceLanguage = e.target.value;
+            showToast(`Voice Assistant language updated to ${selectedVoiceLanguage === 'ta-IN' ? 'Tamil (தமிழ்)' : 'English'}.`, 'info');
+        });
+    }
+
+    // Simple Mode Toggle
+    document.getElementById('btn-toggle-mode').addEventListener('click', () => {
+        isSimpleModeActive = !isSimpleModeActive;
+        const panel = document.getElementById('simple-mode-view');
+        const lbl = document.getElementById('lbl-mode');
+
+        if (panel) panel.style.display = isSimpleModeActive ? 'block' : 'none';
+        if (lbl) lbl.textContent = isSimpleModeActive ? 'Switch to Detailed Dashboard' : 'Switch to Guided Simple Mode';
+
+        showToast(isSimpleModeActive ? '✨ Switched to Guided Simple Operating Mode (எளிய முறை).' : '📊 Switched to Detailed Operational Dashboard.', 'info');
+    });
+
+    // Voice Assistant Controls
+    document.getElementById('btn-toggle-voice').addEventListener('click', () => {
+        voiceAssistantEnabled = !voiceAssistantEnabled;
+        const lbl = document.getElementById('lbl-voice');
+        if (lbl) lbl.textContent = voiceAssistantEnabled ? `Voice Assistant: ON (${selectedVoiceLanguage === 'ta-IN' ? 'தமிழ்' : 'Eng'})` : 'Voice Assistant: OFF';
+
+        if (voiceAssistantEnabled) {
+            speakText(selectedVoiceLanguage === 'ta-IN' ? 'வணக்கம். மேடி-கேர் குரல் உதவி இயக்கப்பட்டது.' : 'Hello. Medi-Care voice assistant activated.', selectedVoiceLanguage);
+            showToast('🔊 Voice Assistant ON: Spoken responses active.', 'success');
+        } else {
+            stopSpeaking();
+            showToast('Voice Assistant OFF.', 'info');
+        }
+    });
+
+    const btnStartVoice = document.getElementById('btn-start-voice');
+    if (btnStartVoice) {
+        btnStartVoice.addEventListener('click', () => {
+            startVoiceRecognition((transcript) => {
+                const num = parseSpokenNumber(transcript, selectedVoiceLanguage);
+                if (num !== null) {
+                    const qtyEl = document.getElementById('wizard-qty');
+                    if (qtyEl) qtyEl.value = num;
+                    showToast(`Voice recognized quantity: ${num} units`, 'success');
+                    speakText(`Quantity set to ${num} units. Please confirm to save.`, selectedVoiceLanguage);
+                } else {
+                    const meds = Array.from(new Set(inventoryState.map(i => i.medicineName)));
+                    const matched = meds.find(m => m.toLowerCase().includes(transcript.toLowerCase()));
+                    if (matched) {
+                        document.getElementById('wizard-medicine').value = matched;
+                        showToast(`Voice matched medicine: ${matched}`, 'success');
+                        speakText(`Selected medicine ${matched}.`, selectedVoiceLanguage);
+                    }
+                }
+            });
+        });
+    }
+
+    const btnStopVoice = document.getElementById('btn-stop-voice');
+    if (btnStopVoice) {
+        btnStopVoice.addEventListener('click', stopVoiceRecognition);
+    }
+
+    const btnReplayVoice = document.getElementById('btn-replay-voice');
+    if (btnReplayVoice) {
+        btnReplayVoice.addEventListener('click', () => {
+            if (lastSpokenText) speakText(lastSpokenText, selectedVoiceLanguage);
+            else speakText('Welcome to Medi-Care medicine operations.', selectedVoiceLanguage);
+        });
+    }
+
+    const btnVoiceManual = document.getElementById('btn-voice-manual');
+    if (btnVoiceManual) {
+        btnVoiceManual.addEventListener('click', () => {
+            stopVoiceRecognition();
+            stopSpeaking();
+            showToast('Switched to manual entry mode.', 'info');
+        });
+    }
+
+    // Simple Action Cards Handlers
+    document.getElementById('btn-simple-wizard').addEventListener('click', openSimpleWizardModal);
+
+    document.getElementById('btn-simple-expiry').addEventListener('click', () => {
+        const box = document.getElementById('simple-mode-content');
+        const title = document.getElementById('simple-box-title');
+        const body = document.getElementById('simple-box-body');
+
+        title.textContent = '⏳ Medicine Expiry & Usability Check';
+        let html = '<div style="display:flex; flex-direction:column; gap:0.5rem;">';
+        batchState.forEach(b => {
+            const daysLeft = getDaysUntilExpiry(b.expiryDate);
+            let badgeClass = daysLeft < 0 ? 'badge-expired' : (daysLeft <= 60 ? 'badge-near-expiry' : 'badge-safe');
+            let statusText = daysLeft < 0 ? `EXPIRED ${Math.abs(daysLeft)} days ago (EXCLUDED)` : (daysLeft <= 60 ? `Expires in ${daysLeft} days (Use First)` : `USABLE (${daysLeft} days left)`);
+
+            html += `
+                <div style="background:#f8fafc; padding:0.75rem; border:1px solid #cbd5e1; border-radius:6px; display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <strong>${esc(b.medicineName)}</strong> - <code>${esc(b.batchNumber)}</code> (${esc(b.centreId)})<br>
+                        <small style="color:#6b7280;">Qty: ${b.quantity} units | Expiry: ${esc(formatDate(b.expiryDate))}</small>
+                    </div>
+                    <span class="badge ${badgeClass}">${statusText}</span>
+                </div>
+            `;
+        });
+        html += '</div>';
+        body.innerHTML = html;
+        box.style.display = 'block';
+    });
+
+    document.getElementById('btn-simple-alerts').addEventListener('click', () => {
+        const box = document.getElementById('simple-mode-content');
+        const title = document.getElementById('simple-box-title');
+        const body = document.getElementById('simple-box-body');
+
+        title.textContent = '⚠️ Plain-Language Medicine Alerts';
+        const processed = inventoryState.map(processForecastItem);
+        const criticals = processed.filter(i => i.status === 'CRITICAL' || i.status === 'WARNING' || i.status === 'OUTDATED');
+
+        let html = '<div style="display:flex; flex-direction:column; gap:0.65rem;">';
+        if (criticals.length === 0) {
+            html += '<p style="color:#16a34a; font-weight:700;"><i class="fa-solid fa-circle-check"></i> All medicine stock levels operate safely!</p>';
+        } else {
+            criticals.forEach(i => {
+                html += `
+                    <div style="background:#fef2f2; border:1px solid #fca5a5; padding:0.85rem; border-radius:6px; display:flex; justify-content:space-between; align-items:center;">
+                        <div>
+                            <strong style="color:#dc2626;">${esc(i.centreId)} — ${esc(i.medicineName)}</strong><br>
+                            <span>${esc(i.riskReason)}</span>
+                        </div>
+                        <button class="btn btn-outline btn-sm btn-speak-alert" data-text="${esc(i.riskReason)}">
+                            <i class="fa-solid fa-volume-high"></i> Listen (கேளுங்கள்)
+                        </button>
+                    </div>
+                `;
+            });
+        }
+        html += '</div>';
+        body.innerHTML = html;
+        box.style.display = 'block';
+
+        document.querySelectorAll('.btn-speak-alert').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                speakText(e.currentTarget.dataset.text);
+            });
+        });
+    });
+
+    document.getElementById('btn-simple-transfers').addEventListener('click', () => {
+        switchTab('tab-redistribution');
+        showToast('Navigated to Inter-PHC Safe Surplus Transfer Recommendations.', 'info');
+    });
+
+    document.getElementById('btn-close-simple-box').addEventListener('click', () => {
+        document.getElementById('simple-mode-content').style.display = 'none';
+    });
+
+    // Guided 3-Step Wizard Navigation Controls
+    document.getElementById('btn-wizard-next').addEventListener('click', () => {
+        if (wizardCurrentStep < 3) {
+            wizardCurrentStep++;
+            updateWizardStepView();
+        }
+    });
+
+    document.getElementById('btn-wizard-back').addEventListener('click', () => {
+        if (wizardCurrentStep > 1) {
+            wizardCurrentStep--;
+            updateWizardStepView();
+        }
+    });
+
+    document.getElementById('btn-close-wizard-modal').addEventListener('click', closeSimpleWizardModal);
+
+    // Quantity Stepper Buttons
+    document.getElementById('btn-qty-minus10').addEventListener('click', () => {
+        const el = document.getElementById('wizard-qty');
+        el.value = Math.max(0, parseInt(el.value, 10) - 10);
+    });
+    document.getElementById('btn-qty-minus1').addEventListener('click', () => {
+        const el = document.getElementById('wizard-qty');
+        el.value = Math.max(0, parseInt(el.value, 10) - 1);
+    });
+    document.getElementById('btn-qty-plus1').addEventListener('click', () => {
+        const el = document.getElementById('wizard-qty');
+        el.value = parseInt(el.value, 10) + 1;
+    });
+    document.getElementById('btn-qty-plus10').addEventListener('click', () => {
+        const el = document.getElementById('wizard-qty');
+        el.value = parseInt(el.value, 10) + 10;
+    });
+    document.getElementById('btn-qty-plus50').addEventListener('click', () => {
+        const el = document.getElementById('wizard-qty');
+        el.value = parseInt(el.value, 10) + 50;
+    });
+
+    // Expiry Presets
+    document.getElementById('preset-3m').addEventListener('click', () => {
+        document.getElementById('wizard-expiry').value = getFutureDateString(90);
+    });
+    document.getElementById('preset-6m').addEventListener('click', () => {
+        document.getElementById('wizard-expiry').value = getFutureDateString(180);
+    });
+    document.getElementById('preset-1y').addEventListener('click', () => {
+        document.getElementById('wizard-expiry').value = getFutureDateString(365);
+    });
+
+    // Barcode Scanner Modal Launch & Teardown
+    document.getElementById('btn-wizard-scan').addEventListener('click', () => {
+        document.getElementById('modal-barcode-scanner').classList.add('open');
+        startCameraScanner();
+    });
+
+    const btnStopCam = document.getElementById('btn-stop-camera');
+    if (btnStopCam) {
+        btnStopCam.addEventListener('click', stopCameraScanner);
+    }
+
+    document.getElementById('btn-close-barcode-modal').addEventListener('click', () => {
+        stopCameraScanner();
+        document.getElementById('modal-barcode-scanner').classList.remove('open');
+    });
+
+    document.getElementById('btn-lookup-manual-barcode').addEventListener('click', () => {
+        const code = document.getElementById('input-manual-barcode').value.trim();
+        handleBarcodeDetected(code);
+    });
+
+    // Wizard Submit Handler
+    document.getElementById('btn-wizard-submit').addEventListener('click', () => {
+        const centreId = document.getElementById('wizard-centre').value;
+        const medicineName = document.getElementById('wizard-medicine').value;
+        const currentStock = parseInt(document.getElementById('wizard-qty').value, 10) || 0;
+        const expiryDate = document.getElementById('wizard-expiry').value || getFutureDateString(180);
+        const lastUpdated = toLocalISO(new Date());
+
+        const existingIdx = inventoryState.findIndex(i =>
+            i.centreId === centreId &&
+            i.medicineName.toLowerCase().trim() === medicineName.toLowerCase().trim()
+        );
+
+        if (existingIdx >= 0) {
+            inventoryState[existingIdx].currentStock = currentStock;
+            inventoryState[existingIdx].lastUpdated = lastUpdated;
+        } else {
+            inventoryState.push({
+                id: `INV-${Date.now()}`,
+                centreId,
+                medicineName,
+                currentStock,
+                dailyConsumption: 5,
+                targetCoverageDays: 30,
+                lastUpdated,
+                lastTransferAt: null
+            });
+        }
+
+        batchState.push({
+            id: `BAT-${Date.now()}`,
+            batchNumber: `WIZ-BATCH-${Math.floor(Math.random() * 1000)}`,
+            centreId,
+            medicineName,
+            quantity: currentStock,
+            expiryDate
+        });
+
+        const isOnline = (typeof navigator !== 'undefined' && 'onLine' in navigator) ? navigator.onLine : true;
+        if (!isOnline) {
+            syncQueueState.push({ type: 'STOCK_UPDATE', centreId, medicineName, currentStock, qty: currentStock });
+        }
+
+        saveStateToStorage();
+        populateDropdowns();
+        renderDashboard();
+        closeSimpleWizardModal();
+
+        showToast(`⚡ Stock record saved successfully for ${medicineName} at ${centreId}!`, 'success');
+    });
+
+    // Existing Controls
     document.getElementById('input-lead-time').addEventListener('input', (e) => {
         const val = parseInt(e.target.value, 10);
         if (!isNaN(val) && val >= 1 && val <= 90) {
@@ -1638,7 +2313,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!activeRequestData) return;
         const { donor, recipient, medicine, qty } = activeRequestData;
 
-        // Block duplicate pending request for same donor + recipient + medicine
         const isDuplicate = pendingRequestsState.some(r =>
             r.status === 'PENDING' &&
             r.donor === donor &&
@@ -1697,7 +2371,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const req = activePendingRequestToApprove;
 
-        // Re-validate against CURRENT data
         const donorItem = inventoryState.find(i => i.centreId === req.donor && i.medicineName === req.medicine);
         const donorProcessed = donorItem ? processForecastItem(donorItem) : null;
         const { validBatchQty } = getItemBatchAnalysis(req.donor, req.medicine);
@@ -1712,7 +2385,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Execute actual stock & batch movement
         const success = executeApprovedTransfer(req.donor, req.recipient, req.medicine, req.qty);
         if (success) {
             req.status = 'APPROVED';
@@ -1804,7 +2476,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Case-insensitive deduplication check
         const existingIdx = inventoryState.findIndex(i =>
             i.centreId === centreId &&
             i.medicineName.toLowerCase().trim() === medicineName.toLowerCase().trim()

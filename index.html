@@ -15,6 +15,8 @@
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="style.css">
+    <!-- ZXing Barcode Scanning Library Fallback -->
+    <script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
 </head>
 
 <body>
@@ -32,15 +34,39 @@
             </div>
 
             <div class="header-actions">
+                <!-- Network Sync Status Pill -->
+                <span id="status-offline" class="network-pill online" title="Connectivity and sync queue status">
+                    <i class="fa-solid fa-wifi"></i> <span id="lbl-network">Online (Synced)</span>
+                </span>
+
+                <!-- Tamil / English Voice Language Selector -->
+                <select id="select-voice-lang" class="btn btn-outline" style="padding: 0.35rem 0.5rem; font-size: 0.775rem;">
+                    <option value="ta-IN">Tamil (தமிழ்)</option>
+                    <option value="en-IN">English</option>
+                </select>
+
+                <!-- Voice Assistant Toggle Button -->
+                <button id="btn-toggle-voice" class="btn btn-outline" title="Toggle Tamil & English Audio Voice Assistant">
+                    <i class="fa-solid fa-volume-high"></i> <span id="lbl-voice">Voice Assistant: OFF</span>
+                </button>
+
+                <!-- Simple / Guided Mode Toggle -->
+                <button id="btn-toggle-mode" class="btn btn-simple-toggle" title="Switch to beginner-friendly guided mode">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i> <span id="lbl-mode">Switch to Guided Simple Mode</span>
+                </button>
+
                 <span class="demo-mode-pill" title="Simulated demonstration data mode for evaluation">
                     <i class="fa-solid fa-flask"></i> DEMO MODE DATA
                 </span>
+
                 <button id="btn-demo" class="btn btn-demo">
                     <i class="fa-solid fa-play"></i> Load Demo Scenario
                 </button>
+
                 <button id="btn-reset" class="btn btn-outline">
                     <i class="fa-solid fa-rotate-left"></i> Reset
                 </button>
+
                 <button id="btn-add-modal" class="btn btn-primary">
                     <i class="fa-solid fa-plus"></i> Add / Update Stock
                 </button>
@@ -48,7 +74,7 @@
         </div>
     </header>
 
-    <!-- Operational Banner -->
+    <!-- Operational Policy Banner -->
     <div class="notice-banner">
         <i class="fa-solid fa-shield-halved"></i>
         <span><strong>Operational Policy:</strong> Inter-PHC stock redistribution requires Medical Officer PIN verification. Count days before ordering district stock.</span>
@@ -56,7 +82,77 @@
 
     <!-- Main Container -->
     <main class="dashboard-container">
-        <!-- Key Operational Summary Cards -->
+
+        <!-- ===================================================================
+             BEGINNER-FRIENDLY GUIDED SIMPLE MODE VIEW (Toggleable)
+             =================================================================== -->
+        <section id="simple-mode-view" class="simple-mode-panel" style="display: none;">
+            <div class="simple-mode-header">
+                <div>
+                    <h2><i class="fa-solid fa-hands-holding-child"></i> Guided Simple Operating Mode (எளிய முறை)</h2>
+                    <p class="simple-mode-desc">Designed for high accessibility, minimal typing, barcode scanning, and Tamil voice assistance.</p>
+                </div>
+                <div class="simple-mode-badges">
+                    <span class="badge badge-safe"><i class="fa-solid fa-check"></i> High Contrast Active</span>
+                    <span class="badge badge-warning" id="simple-voice-badge"><i class="fa-solid fa-microphone"></i> Voice Ready (தமிழ்/English)</span>
+                </div>
+            </div>
+
+            <!-- Voice Control Bar for Simple Mode -->
+            <div id="voice-control-bar" class="voice-control-box" style="display: flex; gap: 0.5rem; align-items: center; background: #fffbeb; border: 1px solid #fcd34d; padding: 0.65rem 1rem; border-radius: 8px; margin-bottom: 1rem; flex-wrap: wrap;">
+                <span style="font-weight: 700; color: #92400e; font-size: 0.85rem;"><i class="fa-solid fa-microphone"></i> Interactive Voice Guide:</span>
+                <button type="button" id="btn-start-voice" class="btn btn-success btn-sm"><i class="fa-solid fa-microphone"></i> Start Listening (பேசுக)</button>
+                <button type="button" id="btn-stop-voice" class="btn btn-danger btn-sm" style="display:none;"><i class="fa-solid fa-microphone-slash"></i> Stop Listening</button>
+                <button type="button" id="btn-replay-voice" class="btn btn-outline btn-sm"><i class="fa-solid fa-rotate-right"></i> Replay Prompt</button>
+                <button type="button" id="btn-voice-manual" class="btn btn-outline btn-sm"><i class="fa-solid fa-keyboard"></i> Switch to Manual</button>
+                <span id="voice-status-indicator" class="badge badge-pending" style="margin-left: auto;">Idle</span>
+            </div>
+            <div id="voice-transcript-display" class="voice-transcript-bar" style="display:none; margin-bottom: 1rem; padding: 0.5rem 0.85rem; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; font-size: 0.85rem; color: #1e40af;">
+                <i class="fa-solid fa-comment-dots"></i> <span>Recognized: "..."</span>
+            </div>
+
+            <!-- Quick Action Cards (4 Large Touch Buttons) -->
+            <div class="simple-actions-grid">
+                <button id="btn-simple-wizard" class="simple-action-card card-add">
+                    <div class="card-icon"><i class="fa-solid fa-box-open"></i></div>
+                    <div class="card-title">1. Add or Update Stock</div>
+                    <div class="card-sub">Guided 3-step entry with barcode & voice assistance</div>
+                    <div class="card-action-tag">Start Step 1 <i class="fa-solid fa-arrow-right"></i></div>
+                </button>
+
+                <button id="btn-simple-expiry" class="simple-action-card card-expiry">
+                    <div class="card-icon"><i class="fa-solid fa-clock-rotate-left"></i></div>
+                    <div class="card-title">2. Check Medicine Expiry</div>
+                    <div class="card-sub">See batches expiring soon & safe usable stock</div>
+                    <div class="card-action-tag">View Expiry List <i class="fa-solid fa-arrow-right"></i></div>
+                </button>
+
+                <button id="btn-simple-alerts" class="simple-action-card card-alerts">
+                    <div class="card-icon"><i class="fa-solid fa-volume-high"></i></div>
+                    <div class="card-title">3. View Stock Warnings</div>
+                    <div class="card-sub">Plain-language explanations with Tamil voice audio</div>
+                    <div class="card-action-tag">Listen to Warnings <i class="fa-solid fa-arrow-right"></i></div>
+                </button>
+
+                <button id="btn-simple-transfers" class="simple-action-card card-transfers">
+                    <div class="card-icon"><i class="fa-solid fa-truck-fast"></i></div>
+                    <div class="card-title">4. Review Transfers</div>
+                    <div class="card-sub">1-click request transfers from nearby surplus PHCs</div>
+                    <div class="card-action-tag">Check Transfers <i class="fa-solid fa-arrow-right"></i></div>
+                </button>
+            </div>
+
+            <!-- Simple Mode Content Display Box -->
+            <div id="simple-mode-content" class="simple-content-box" style="display: none;">
+                <div class="simple-box-header">
+                    <h3 id="simple-box-title">Content Details</h3>
+                    <button id="btn-close-simple-box" class="btn btn-outline btn-sm">&times; Close View</button>
+                </div>
+                <div id="simple-box-body" class="simple-box-body"></div>
+            </div>
+        </section>
+
+        <!-- Key Operational Summary Cards (Advanced / Standard Mode) -->
         <section class="metrics-bar" id="kpi-summary">
             <div class="metric-cell">
                 <span class="metric-label">PHCs Monitored</span>
@@ -497,6 +593,145 @@
     <footer class="app-footer">
         <p>MEDI-CARE &copy; 2026. Designed for Primary Health Centres & District Health Officers.</p>
     </footer>
+
+    <!-- ===================================================================
+         MODALS & DIALOG OVERLAYS
+         =================================================================== -->
+
+    <!-- Guided 3-Step Stock Entry Wizard Modal -->
+    <div id="modal-simple-wizard" class="modal-overlay">
+        <div class="modal-card modal-md">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-wand-magic-sparkles"></i> 3-Step Guided Stock Entry (எளிய முறை)</h3>
+                <button class="modal-close" id="btn-close-wizard-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- Stepper Progress Bar -->
+                <div class="wizard-stepper-bar">
+                    <div class="step-pill active" id="step-pill-1">1. Medicine</div>
+                    <div class="step-pill" id="step-pill-2">2. Quantity & Expiry</div>
+                    <div class="step-pill" id="step-pill-3">3. Confirm</div>
+                </div>
+
+                <!-- STEP 1: Medicine Selection & Barcode/Voice Input -->
+                <div id="wizard-step-1" class="wizard-step-page">
+                    <h4>Step 1: Select or Scan Medicine</h4>
+                    <div class="form-group">
+                        <label for="wizard-centre">Health Centre PHC:</label>
+                        <select id="wizard-centre" class="input-large"></select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="wizard-medicine">Medicine Name:</label>
+                        <select id="wizard-medicine" class="input-large"></select>
+                    </div>
+
+                    <div class="wizard-input-actions">
+                        <button type="button" id="btn-wizard-scan" class="btn btn-outline btn-lg">
+                            <i class="fa-solid fa-barcode"></i> Scan Barcode (பார்கோடு)
+                        </button>
+                        <button type="button" id="btn-wizard-voice" class="btn btn-outline btn-lg">
+                            <i class="fa-solid fa-microphone"></i> Speak Name (தமிழ்/Eng)
+                        </button>
+                    </div>
+
+                    <div id="wizard-voice-status" class="voice-status-box" style="display:none;"></div>
+                </div>
+
+                <!-- STEP 2: Large Touch Quantity & Expiry Presets -->
+                <div id="wizard-step-2" class="wizard-step-page" style="display:none;">
+                    <h4>Step 2: Enter Physical Stock & Expiry</h4>
+                    <div class="form-group">
+                        <label for="wizard-qty">Physical Stock Quantity (Units):</label>
+                        <div class="stepper-box">
+                            <button type="button" class="btn btn-stepper" id="btn-qty-minus10">-10</button>
+                            <button type="button" class="btn btn-stepper" id="btn-qty-minus1">-1</button>
+                            <input type="number" id="wizard-qty" value="100" min="0" class="input-large input-qty">
+                            <button type="button" class="btn btn-stepper" id="btn-qty-plus1">+1</button>
+                            <button type="button" class="btn btn-stepper" id="btn-qty-plus10">+10</button>
+                            <button type="button" class="btn btn-stepper" id="btn-qty-plus50">+50</button>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="wizard-expiry">Batch Expiry Date:</label>
+                        <input type="date" id="wizard-expiry" class="input-large">
+                        <div class="preset-pills">
+                            <span class="preset-pill" id="preset-3m">+3 Months</span>
+                            <span class="preset-pill" id="preset-6m">+6 Months</span>
+                            <span class="preset-pill" id="preset-1y">+1 Year</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- STEP 3: Plain-Language Summary & Confirm -->
+                <div id="wizard-step-3" class="wizard-step-page" style="display:none;">
+                    <h4>Step 3: Review Plain-Language Summary</h4>
+                    <div id="wizard-summary-box" class="summary-box-highlight"></div>
+                    <div style="margin-top:0.5rem; text-align:right;">
+                        <button type="button" id="btn-read-summary-audio" class="btn btn-outline btn-sm">
+                            <i class="fa-solid fa-volume-high"></i> Listen in Tamil/English (கேளுங்கள்)
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Wizard Actions -->
+                <div class="form-actions" style="margin-top: 1rem;">
+                    <button type="button" class="btn btn-outline" id="btn-wizard-back" style="display:none;">
+                        <i class="fa-solid fa-arrow-left"></i> Back
+                    </button>
+                    <button type="button" class="btn btn-primary" id="btn-wizard-next">
+                        Next <i class="fa-solid fa-arrow-right"></i>
+                    </button>
+                    <button type="button" class="btn btn-success" id="btn-wizard-submit" style="display:none;">
+                        <i class="fa-solid fa-check"></i> Confirm & Save Stock
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Camera Barcode Scanner Modal -->
+    <div id="modal-barcode-scanner" class="modal-overlay">
+        <div class="modal-card modal-md">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-barcode"></i> Camera Barcode Scanner (பார்கோடு)</h3>
+                <button class="modal-close" id="btn-close-barcode-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- Camera Controls & Status Badge -->
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+                    <span id="camera-status-badge" class="badge badge-pending">Camera Idle</span>
+                    <button type="button" id="btn-stop-camera" class="btn btn-danger btn-sm" style="display:none;">
+                        <i class="fa-solid fa-video-slash"></i> Stop Camera
+                    </button>
+                </div>
+
+                <!-- Camera Viewfinder Live Stream Container -->
+                <div class="viewfinder-container">
+                    <video id="barcode-video" autoplay playsinline muted></video>
+                    <div class="viewfinder-grid">
+                        <div class="laser-line"></div>
+                        <span class="viewfinder-text">Align barcode inside green frame</span>
+                    </div>
+                </div>
+
+                <!-- Fallback Manual Barcode Search -->
+                <div class="form-group" style="margin-top: 0.75rem;">
+                    <label for="input-manual-barcode">Or Enter Barcode GTIN Manually:</label>
+                    <div style="display:flex; gap:0.5rem;">
+                        <input type="text" id="input-manual-barcode" placeholder="e.g. 8901234567890" style="flex:1;">
+                        <button type="button" id="btn-lookup-manual-barcode" class="btn btn-primary">
+                            <i class="fa-solid fa-search"></i> Lookup
+                        </button>
+                    </div>
+                </div>
+                <div id="barcode-lookup-result" class="barcode-result-box" style="display:none;">
+                    <button id="btn-apply-barcode-med" style="display:none;"></button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- Add/Edit Stock Modal -->
     <div id="modal-stock" class="modal-overlay">
