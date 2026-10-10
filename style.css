@@ -217,9 +217,30 @@ body {
     background-color: #b91c1c;
 }
 
+.btn-warning {
+    background-color: #d97706;
+    color: #fff;
+}
+
+.btn-warning:hover {
+    background-color: #b45309;
+}
+
 .btn-sm {
     padding: 0.3rem 0.6rem;
     font-size: 0.75rem;
+}
+
+.nav-badge {
+    background-color: #dc2626;
+    color: #ffffff;
+    font-size: 0.7rem;
+    font-weight: 800;
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+    margin-left: 0.3rem;
+    display: inline-block;
+    line-height: 1;
 }
 
 /* Main Container */

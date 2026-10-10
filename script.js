@@ -1194,7 +1194,7 @@ function renderDashboard() {
     tbodyTrans.innerHTML = '';
 
     if (suggestedTransfers.length === 0) {
-        tbodyTrans.innerHTML = `<tr><td colspan="7" style="text-align: center; color: #6b7280; padding: 2rem;">No surplus transfers required currently. All health centres operate within safe stock levels!</td></tr>`;
+        tbodyTrans.innerHTML = `<tr><td colspan="8" style="text-align: center; color: #6b7280; padding: 2rem;">No surplus transfers required currently. All health centres operate within safe stock levels!</td></tr>`;
     } else {
         suggestedTransfers.forEach((t, idx) => {
             const tr = document.createElement('tr');
@@ -1208,6 +1208,8 @@ function renderDashboard() {
                 r.medicine === t.medicineName
             );
 
+            const impactObj = t.impact || computeTransferImpact(t.donorCentre, t.recipientCentre, t.medicineName, t.transferQty);
+
             tr.innerHTML = `
                 <td><span class="badge ${badgeClass}">#${idx + 1} ${esc(t.priority)}</span></td>
                 <td>
@@ -1220,6 +1222,7 @@ function renderDashboard() {
                 <td><strong>${esc(t.medicineName)}</strong></td>
                 <td>${t.distanceKm} km</td>
                 <td><strong style="color:#0284c7; font-size: 0.95rem;">${t.transferQty} units</strong></td>
+                <td>${impactCompactHtml(impactObj)}</td>
                 <td><small style="color:#4b5563;">${esc(t.reasoning)}</small></td>
                 <td>
                     ${isPending ? `
@@ -1634,6 +1637,21 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-submit-req').addEventListener('click', () => {
         if (!activeRequestData) return;
         const { donor, recipient, medicine, qty } = activeRequestData;
+
+        // Block duplicate pending request for same donor + recipient + medicine
+        const isDuplicate = pendingRequestsState.some(r =>
+            r.status === 'PENDING' &&
+            r.donor === donor &&
+            r.recipient === recipient &&
+            r.medicine === medicine
+        );
+
+        if (isDuplicate) {
+            showToast("A request for this transfer is already pending approval.", 'info');
+            closeRequestTransferModal();
+            return;
+        }
+
         const impact = computeTransferImpact(donor, recipient, medicine, qty);
 
         const newReq = {

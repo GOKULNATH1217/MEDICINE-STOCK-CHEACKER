@@ -5,8 +5,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description"
-        content="AushadhiAlert PHC — Primary Health Centre Medicine Stock-Out Early Warning & Safe Redistribution System">
-    <title>AushadhiAlert PHC — Healthcare Supply Chain Operations</title>
+        content="MEDI-CARE — Primary Health Centre Medicine Stock-Out Early Warning & Safe Redistribution System">
+    <title>MEDI-CARE — PHC Medicine Stock-Out Early Warning & Safe Redistribution</title>
     <!-- Google Fonts: Plus Jakarta Sans for clean typography -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -48,6 +48,12 @@
         </div>
     </header>
 
+    <!-- Operational Banner -->
+    <div class="notice-banner">
+        <i class="fa-solid fa-shield-halved"></i>
+        <span><strong>Operational Policy:</strong> Inter-PHC stock redistribution requires Medical Officer PIN verification. Count days before ordering district stock.</span>
+    </div>
+
     <!-- Main Container -->
     <main class="dashboard-container">
         <!-- Key Operational Summary Cards -->
@@ -76,6 +82,12 @@
                 <span class="metric-sub" id="metric-transfer-units">0 units available</span>
             </div>
 
+            <div class="metric-cell cell-pending">
+                <span class="metric-label">Pending Approvals</span>
+                <div class="metric-val" id="metric-pending-approvals">0</div>
+                <span class="metric-sub">Awaiting Officer Sign-off</span>
+            </div>
+
             <div class="metric-cell cell-procurement">
                 <span class="metric-label">District Deficit</span>
                 <div class="metric-val" id="metric-district-req">0</div>
@@ -83,9 +95,15 @@
             </div>
 
             <div class="metric-cell cell-expiry">
-                <span class="metric-label">Near / Expired Batches</span>
+                <span class="metric-label">Expired Batches</span>
                 <div class="metric-val" id="metric-expired">0</div>
-                <span class="metric-sub">Excluded from Usable Stock</span>
+                <span class="metric-sub">Excluded from usable stock</span>
+            </div>
+
+            <div class="metric-cell cell-near-expiry">
+                <span class="metric-label">Near-Expiry (<=60d)</span>
+                <div class="metric-val" id="metric-near-expiry">0</div>
+                <span class="metric-sub">Still usable, use first</span>
             </div>
         </section>
 
@@ -136,6 +154,10 @@
             <button class="nav-tab" data-tab="tab-redistribution">
                 <i class="fa-solid fa-route"></i> 2. Inter-PHC Redistribution & Route Transfers
             </button>
+            <button class="nav-tab" data-tab="tab-approvals">
+                <i class="fa-solid fa-user-check"></i> Pending Approvals & Audit Log
+                <span id="pending-nav-badge" class="nav-badge" style="display:none">0</span>
+            </button>
             <button class="nav-tab" data-tab="tab-inventory">
                 <i class="fa-solid fa-table-list"></i> Full Inventory Forecasts
             </button>
@@ -156,8 +178,7 @@
                 <div class="panel-header">
                     <div>
                         <h2><i class="fa-solid fa-bell"></i> Critical Shortages & Action Items</h2>
-                        <p class="panel-desc">Primary Health Centres requiring immediate attention due to imminent
-                            medicine depletion.</p>
+                        <p class="panel-desc">Primary Health Centres requiring immediate attention due to imminent medicine depletion.</p>
                     </div>
                     <span class="count-pill" id="needs-attention-count">0 items need action</span>
                 </div>
@@ -191,10 +212,8 @@
                 <div class="panel">
                     <div class="panel-header">
                         <div>
-                            <h2><i class="fa-solid fa-truck-ramp-box"></i> Inter-PHC Safe Surplus Transfer
-                                Recommendations</h2>
-                            <p class="panel-desc">Greedy optimization matching nearby surplus donor PHCs to recipient
-                                shortages while strictly preserving donor safety stock.</p>
+                            <h2><i class="fa-solid fa-truck-ramp-box"></i> Inter-PHC Safe Surplus Transfer Recommendations</h2>
+                            <p class="panel-desc">Greedy optimization matching nearby surplus donor PHCs to recipient shortages while strictly preserving donor safety stock.</p>
                         </div>
                     </div>
                     <div class="table-container">
@@ -206,6 +225,7 @@
                                     <th>Medicine Item</th>
                                     <th>Distance</th>
                                     <th>Suggested Transfer</th>
+                                    <th>Effect on Both Centres</th>
                                     <th>Algorithm Safety Reasoning</th>
                                     <th>Review & Execute Transfer</th>
                                 </tr>
@@ -221,10 +241,8 @@
                 <div class="panel">
                     <div class="panel-header">
                         <div>
-                            <h2><i class="fa-solid fa-warehouse"></i> Remaining District Authority Procurement Deficit
-                            </h2>
-                            <p class="panel-desc">Shortfalls that CANNOT be satisfied by nearby PHC safe surplus and
-                                require immediate district purchase/dispatch.</p>
+                            <h2><i class="fa-solid fa-warehouse"></i> Remaining District Authority Procurement Deficit</h2>
+                            <p class="panel-desc">Shortfalls that CANNOT be satisfied by nearby PHC safe surplus and require immediate district purchase/dispatch.</p>
                         </div>
                     </div>
                     <div class="table-container">
@@ -248,14 +266,70 @@
             </div>
         </section>
 
+        <!-- TAB NEW: PENDING APPROVALS & AUDIT LOG -->
+        <section id="tab-approvals" class="tab-content">
+            <div class="panel">
+                <div class="panel-header">
+                    <div>
+                        <h2><i class="fa-solid fa-user-clock"></i> Pending Medical Officer Approvals</h2>
+                        <p class="panel-desc">Inter-PHC stock transfer requests submitted for Medical Officer verification and authorization.</p>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Requested At</th>
+                                <th>Transfer Route</th>
+                                <th>Medicine</th>
+                                <th>Qty</th>
+                                <th>Effect on Both Centres</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="pending-tbody">
+                            <!-- Populated via script.js -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="panel" style="margin-top: 1.5rem;">
+                <div class="panel-header">
+                    <div>
+                        <h2><i class="fa-solid fa-file-signature"></i> Transfer Audit Log</h2>
+                        <p class="panel-desc">Historical record of all stock redistribution requests, approvals, rejections, and stock movements.</p>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Timestamp</th>
+                                <th>Action</th>
+                                <th>Officer</th>
+                                <th>Route</th>
+                                <th>Medicine</th>
+                                <th>Qty</th>
+                                <th>Note</th>
+                            </tr>
+                        </thead>
+                        <tbody id="audit-tbody">
+                            <!-- Populated via script.js -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
         <!-- TAB 3: FULL INVENTORY FORECASTS TABLE -->
         <section id="tab-inventory" class="tab-content">
             <div class="panel">
                 <div class="panel-header">
                     <div>
                         <h2><i class="fa-solid fa-list-check"></i> Complete PHC Medicine Inventory Forecasts</h2>
-                        <p class="panel-desc">Stockout forecasts based on physical stock minus expired batch quantities,
-                            daily consumption, and lead-time risk parameters.</p>
+                        <p class="panel-desc">Stockout forecasts based on physical stock minus expired batch quantities, daily consumption, and lead-time risk parameters.</p>
                     </div>
                     <span class="count-pill" id="inventory-count">Showing 0 items</span>
                 </div>
@@ -289,8 +363,7 @@
                 <div class="panel-header">
                     <div>
                         <h2><i class="fa-solid fa-boxes-stacked"></i> Medicine Batch & Expiry Management</h2>
-                        <p class="panel-desc">Tracks batch numbers, manufacturing dates, expiry dates, and automatically
-                            excludes expired quantities from usable inventory.</p>
+                        <p class="panel-desc">Tracks batch numbers, manufacturing dates, expiry dates, and automatically excludes expired quantities from usable inventory.</p>
                     </div>
                     <button id="btn-add-batch-modal" class="btn btn-primary btn-sm">
                         <i class="fa-solid fa-plus"></i> Register Batch
@@ -328,12 +401,11 @@
                 <div class="panel-header">
                     <div>
                         <h2><i class="fa-solid fa-map-location-dot"></i> PHC Geographic Distance Matrix (km)</h2>
-                        <p class="panel-desc">Inter-PHC distances used by the redistribution engine to prefer nearby
-                            donor clinics.</p>
+                        <p class="panel-desc">Inter-PHC distances used by the redistribution engine to prefer nearby donor clinics.</p>
                     </div>
                 </div>
                 <div class="table-container">
-                    <table class="data-table" "distance-matrix-table">
+                    <table class="data-table" id="distance-matrix-table">
                         <!-- Populated via script.js -->
                     </table>
                 </div>
@@ -346,8 +418,7 @@
                 <div class="sim-header">
                     <div>
                         <h2><i class="fa-solid fa-sliders"></i> Interactive What-If Supply Chain & Demand Simulator</h2>
-                        <p class="panel-desc">Stress test the healthcare network against disease outbreak surges,
-                            monsoon logistics delays, or supply damage shocks.</p>
+                        <p class="panel-desc">Stress test the healthcare network against disease outbreak surges, monsoon logistics delays, or supply damage shocks.</p>
                     </div>
                     <button id="btn-reset-sim" class="btn btn-outline btn-sm">
                         <i class="fa-solid fa-rotate-left"></i> Reset Simulator
@@ -361,13 +432,12 @@
                             <strong id="val-demand-multiplier">1.0x</strong>
                         </label>
                         <input type="range" id="sim-demand-multiplier" min="1.0" max="3.0" step="0.1" value="1.0">
-                        <p class="sim-note">Simulates patient consumption surges during seasonal outbreaks (e.g. 2.0x
-                            surge).</p>
+                        <p class="sim-note">Simulates patient consumption surges during seasonal outbreaks (e.g. 2.0x surge).</p>
                     </div>
 
                     <div class="sim-card">
                         <label for="sim-delay-days">
-                            <span><i class="fa-solid fa-truck-delay"></i> Supplier Delivery Delay:</span>
+                            <span><i class="fa-solid fa-truck-fast"></i> Supplier Delivery Delay:</span>
                             <strong id="val-delay-days">+0 days</strong>
                         </label>
                         <input type="range" id="sim-delay-days" min="0" max="30" step="1" value="0">
@@ -382,11 +452,17 @@
                         <input type="range" id="sim-supply-shock" min="0" max="50" step="5" value="0">
                         <p class="sim-note">Simulates sudden batch spoilage or cold chain breakdown stock loss.</p>
                     </div>
+
+                    <div class="sim-card sim-checkbox-card">
+                        <label for="sim-assume-transfers">
+                            <input type="checkbox" id="sim-assume-transfers">
+                            <span><strong>Assume suggested transfers are executed</strong> (stress-test after redistribution)</span>
+                        </label>
+                    </div>
                 </div>
 
                 <div class="sim-status-banner" id="sim-impact-summary">
-                    <i class="fa-solid fa-circle-check"></i> Baseline mode active. Adjust sliders above to stress test
-                    supply network.
+                    <i class="fa-solid fa-circle-check"></i> Baseline mode active. Adjust sliders above to stress test supply network.
                 </div>
 
                 <div class="panel">
@@ -419,8 +495,7 @@
 
     <!-- Footer -->
     <footer class="app-footer">
-        <p>MEDI-CARE &copy; 2026. Designed for Primary Health Centres & District Health
-            Officers.</p>
+        <p>MEDI-CARE &copy; 2026. Designed for Primary Health Centres & District Health Officers.</p>
     </footer>
 
     <!-- Add/Edit Stock Modal -->
@@ -508,6 +583,75 @@
                 <div class="form-actions">
                     <button type="button" class="btn btn-outline" id="btn-cancel-batch">Cancel</button>
                     <button type="submit" class="btn btn-primary">Register Batch Record</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Request Transfer Modal -->
+    <div id="modal-request-transfer" class="modal-overlay">
+        <div class="modal-card modal-md">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-clipboard-check"></i> Review & Request Transfer</h3>
+                <button class="modal-close" id="btn-close-req-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="req-transfer-summary"></div>
+                <p class="sim-note"><i class="fa-solid fa-info-circle"></i> No stock moves until a Medical Officer approves.</p>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-outline" id="btn-cancel-req">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="btn-submit-req">Submit Request</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Medical Officer Approval Modal -->
+    <div id="modal-approve-transfer" class="modal-overlay">
+        <div class="modal-card modal-md">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-user-check"></i> Medical Officer Approval</h3>
+                <button class="modal-close" id="btn-close-approve-modal">&times;</button>
+            </div>
+            <form id="form-approve-transfer" class="modal-body">
+                <div id="approve-route-summary"></div>
+                <div class="form-group">
+                    <label for="input-officer-name">Medical Officer Name:</label>
+                    <input type="text" id="input-officer-name" required placeholder="e.g. Dr. A. Sharma">
+                </div>
+                <div class="form-group">
+                    <label for="input-officer-pin">Authorisation PIN:</label>
+                    <input type="password" id="input-officer-pin" required placeholder="Enter PIN">
+                    <small class="sim-note">Demo PIN: 1234</small>
+                </div>
+                <div class="form-group">
+                    <label for="input-approve-note">Approval Note (Optional):</label>
+                    <textarea id="input-approve-note" rows="2" placeholder="Add optional instructions or comments..."></textarea>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-outline" id="btn-cancel-approve">Cancel</button>
+                    <button type="submit" class="btn btn-success">Approve & Execute Transfer</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Reject Transfer Request Modal -->
+    <div id="modal-reject-transfer" class="modal-overlay">
+        <div class="modal-card modal-md">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-user-xmark"></i> Reject Transfer Request</h3>
+                <button class="modal-close" id="btn-close-reject-modal">&times;</button>
+            </div>
+            <form id="form-reject-transfer" class="modal-body">
+                <div id="reject-route-summary"></div>
+                <div class="form-group">
+                    <label for="input-reject-reason">Reason for rejection:</label>
+                    <textarea id="input-reject-reason" rows="3" required placeholder="Explain reason for rejecting transfer..."></textarea>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-outline" id="btn-cancel-reject">Cancel</button>
+                    <button type="submit" class="btn btn-danger">Reject Request</button>
                 </div>
             </form>
         </div>
