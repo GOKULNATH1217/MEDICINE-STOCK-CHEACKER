@@ -1,0 +1,146 @@
+MEDICINE-STOCK-CHECKER
+Count the days, then look sideways before you look up
+1. Introduction
+Medicine-Stock-Checker is a proposed medicine inventory monitoring and early warning
+system designed for Primary Health Centres (PHCs). The project focuses on identifying
+potential medicine shortages before they affect patients and helping healthcare staff take timely
+action.
+In many situations, one health centre may run out of an essential medicine while another nearby
+centre has more stock than it currently needs. When shortages are identified late and
+replenishment depends on periodic district-level orders, patients may experience unnecessary
+delays in receiving medicines.
+Medicine-Stock-Checker aims to address this problem by forecasting stock-out dates,
+identifying nearby centres with available surplus stock, and recommending transfers before
+requesting additional supplies from the district.
+2. Problem Statement
+Medicine Stock-Out Early Warning for Primary Health Centres
+Primary Health Centres need a reliable way to monitor essential medicine availability and
+anticipate shortages. Looking only at the current stock quantity may not reveal how quickly a
+medicine is being consumed or how soon it will run out.
+At the same time, surplus stock at nearby centres may remain unused while another centre faces
+an urgent shortage. A system that considers both consumption trends and stock availability
+across centres can help staff make better replenishment decisions.
+3. Proposed Solution
+Medicine-Stock-Checker combines stock monitoring, consumption-based forecasting, and
+local medicine redistribution in one system.
+The system estimates how many days of stock remain at each centre and identifies medicines
+that may run out soon. It then checks whether nearby centres can safely share surplus stock. If
+the shortage cannot be fully covered through redistribution, the remaining requirement is
+calculated for a district-level replenishment request.
+This approach aims to support earlier decisions, better coordination, and more effective use of
+available medicine stocks.
+4. Objectives
+ Monitor essential medicine stock across multiple Primary Health Centres.
+ Estimate the number of days remaining before a medicine runs out.
+ Identify potential shortages early enough for action.
+ Calculate the shortage at each centre and the safe surplus available elsewhere.
+ Recommend suitable transfers between nearby centres.
+ Calculate the remaining quantity required from the district.
+ Provide a clear dashboard for monitoring stock levels and urgent requirements.
+5. Key Features
+1. Medicine Stock Monitoring
+Maintain inventory records for different medicines at participating health centres, including
+current quantities and recent consumption.
+2. Stock-Out Forecasting
+Estimate the remaining days of stock using recent average daily consumption. Use the estimate
+to calculate a projected stock-out date.
+3. Early Warning Alerts
+Classify medicine availability into Critical, Warning, and Safe categories. Alert thresholds
+should account for expected replenishment time rather than stock quantity alone.
+4. Surplus Identification
+Estimate how much stock a centre can share after accounting for its own expected consumption
+and required safety stock.
+5. Nearby Centre Matching
+Recommend transfers by prioritizing urgent shortages and considering distance, available
+surplus, and transfer feasibility.
+6. District Replenishment Support
+Calculate the shortage that remains after suitable local transfers and prepare the information
+needed for a district replenishment request.
+7. Transfer Tracking
+Track proposed transfers through Suggested, Approved, In Transit, and Received stages.
+Update inventory when receipt is confirmed.
+8. Inventory Dashboard
+Present stock quantities, forecasted run-out dates, urgency levels, transfer recommendations,
+and outstanding district requirements in one view.
+6. Working Methodology
+The proposed system follows these steps:
+1. Collect stock quantities and recent consumption records from each health centre.
+2. Calculate average daily consumption using an appropriate recent observation period.
+3. Estimate days remaining and the projected stock-out date.
+4. Identify centres requiring urgent replenishment.
+5. Calculate the shortage at each centre and the safe surplus available at potential donor
+centres.
+6. Match shortages with suitable nearby donors, starting with the most urgent
+requirements.
+7. Reserve allocated quantities so that the same surplus is not promised to multiple centres.
+8. Calculate any remaining shortage and escalate it for district replenishment.
+9. Track transfer approval and receipt, updating stock records when the medicine arrives.
+If consumption is zero or records are outdated, the system should flag the situation for review
+instead of producing misleading forecasts.
+7. Example Scenario
+Consider two Primary Health Centres that maintain paracetamol syrup stocks.
+Particulars Centre A Centre C
+Current stock 60 bottles 200 bottles
+Average daily consumption 10 bottles 2 bottles
+Estimated days remaining 6 days 100 days
+Distance between centres 9 km 9 km
+Assume that the target stock cover is 30 days.
+Centre A requires 300 bottles for 30 days. Since it currently has 60 bottles, its shortage is 240
+bottles.
+Centre C requires 60 bottles for 30 days. With 200 bottles in stock, it has a potential surplus of
+140 bottles.
+The system can therefore recommend transferring up to 140 bottles from Centre C to Centre
+A, subject to authorization and operational checks. The remaining shortage of 100 bottles can
+then be included in a district replenishment request.
+This example illustrates how consumption-based forecasting and local redistribution can work
+together to address medicine shortages.
+8. Technology Stack
+The initial prototype is planned using the following technologies:
+ HTML: Structure of the web application.
+ CSS: Layout, styling, and dashboard design.
+ JavaScript: Forecasting calculations, stock matching, and interface interactions.
+ Firebase Firestore: Storage of centre, medicine, and inventory records.
+ Firebase Authentication: User authentication and access management.
+AI-assisted development tools may be used to support implementation, debugging, and testing.
+9. Data Security and Responsible Use
+The prototype will initially use simulated health-centre and inventory data. Real patient
+information is not required for the demonstration.
+Database access should be restricted through appropriate authentication and security rules.
+Medicine transfers should require approval from authorized personnel, and inventory records
+should be updated only after confirmed receipt.
+The system is intended to support inventory planning. It does not provide medical advice or
+replace the judgment of healthcare professionals.
+10. Expected Outcomes
+Medicine-Stock-Checker aims to improve medicine availability by identifying shortages
+before stock runs out and making existing surplus stock more visible across nearby centres.
+The expected outcomes include earlier shortage warnings, better coordination between health
+centres, more informed district replenishment requests, and reduced avoidable delays in
+responding to medicine requirements.
+Actual improvements would need to be evaluated using reliable inventory data and real-world
+testing.
+11. Future Enhancements
+Possible future improvements include:
+ Warnings for outdated stock records.
+ Detection of unusual increases in medicine consumption.
+ SMS or email alerts.
+ Automated district indent request generation.
+ A Tamil-language interface.
+ Interactive maps showing nearby health centres.
+ Improved forecasts using historical consumption data.
+12. Project Status
+Current status: Initial planning and development.
+This project is being developed for Sakthi Hack Fest '26 under the Sustainable Development
+Goals domain. Features will be described as completed only after implementation and testing.
+13. Team Details
+Team Name: Beginner's
+Hackathon: Sakthi Hack Fest '26
+Team Members:
+ Pradeepa S — Team Leader
+ Gokulnath S
+ Maha S
+ Nithyadharsini B
+Conclusion
+Medicine-Stock-Checker proposes a practical way to move from reacting to medicine shortages
+towards anticipating them. By estimating how quickly stock is falling, checking for safe surplus
+at nearby centres, and escalating only the remaining requirement, the system aims to help
+healthcare staff make timely 
