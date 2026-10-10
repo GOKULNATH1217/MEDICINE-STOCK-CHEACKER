@@ -2,29 +2,79 @@
  * ============================================================================
  * AUSHADHI-ALERT: PHC MEDICINE STOCK-OUT EARLY WARNING & REDISTRIBUTION ENGINE
  * ============================================================================
- * Senior-level Vanilla JavaScript Implementation for Hackathon Prototype.
+ * Clean Vanilla JavaScript Implementation for Hackathon Prototype.
  * 
- * CORE ALGORITHMIC FORMULAS & ENHANCEMENTS:
- * 1. Usable Stock = Total Stock - Expired Stock (Expired stock strictly excluded!)
- * 2. Estimated Days Remaining = Usable Stock / Average Daily Consumption
+ * CORE ALGORITHMIC FORMULAS & WORKFLOWS:
+ * 1. Usable Stock = Total Physical Stock - Expired Batch Stock (Deducted exactly once)
+ * 2. Days Remaining = Usable Stock / Average Daily Consumption (0 if Usable Stock == 0)
  * 3. Target Stock = Average Daily Consumption * Target Coverage Days
- * 4. Shortfall (Recipient Need) = Max(0, Target Stock - Usable Stock)
- * 5. Donor Safe Surplus = Max(0, Donor Usable Stock - Donor Safety Stock)
- * 6. Greedy Redistribution with One-Click Transfer Execution:
- *    - Excludes outdated donor records (>14 days).
- *    - Flags stale recipient records for manual audit.
- *    - Prefers closest donor PHCs based on distance matrix (km).
- *    - Allows instant execution of transfers, dynamically updating inventory state.
- * 7. Batch & Expiry Management (Near-expiry <60 days, Expired exclusion).
- * 8. Facility Risk Overview Matrix.
- * 9. Interactive What-If Supply Chain Simulator.
+ * 4. Shortfall = Max(0, Target Stock - Usable Stock)
+ * 5. Donor Safe Surplus = Max(0, Usable Stock - Donor Safety Stock)
+ * 6. Greedy Inter-PHC Redistribution:
+ *    - Route visualization: Donor PHC → Distance (km) → Recipient PHC
+ *    - Never allocates outdated donor stock (>14 days).
+ *    - Requires verification confirmation for outdated recipients.
+ *    - Capped at donor safe surplus; surplus tracked across pass to prevent double allocation.
+ *    - Synchronizes batch quantities upon transfer execution.
+ * 7. Procurement Deficit: Displays ONLY items with remaining district requirement > 0.
  * ============================================================================
  */
 
-// Global State
-let leadTimeDays = 10; // Default replenishment lead time in days
+// Global Config
+function toLocalISO(d) { const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; }
 
-// Distance matrix between PHCs in kilometers (Symmetric)
+function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+// Builds N days of history ending today; uses = daily consumption, oldest -> newest
+function makeHistory(now, uses) {
+    const h = []; let s = now;
+    for (let i = 0; i <= uses.length; i++) {
+        h.unshift({ date: getPastDateString(i), stock: s, adj: 0 });
+        s += uses[uses.length - 1 - i] || 0;
+    }
+    return h;
+}
+
+// Records a stock point. adj = net stock received (+) or sent away (-) since the last point
+function recordHistory(item, adj = 0, date = toLocalISO(new Date())) {
+    item.history = item.history || [{ date: item.lastUpdated, stock: item.currentStock - adj, adj: 0 }];
+    const last = item.history[item.history.length - 1];
+    if (last.date === date) { last.stock = item.currentStock; last.adj = (last.adj || 0) + adj; }
+    else item.history.push({ date, stock: item.currentStock, adj });
+    item.history.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// Consumption measured from history, not typed in
+function computeUsage(item) {
+    const h = (item.history || []).slice().sort((a, b) => a.date.localeCompare(b.date));
+    const iv = [];
+    for (let i = 1; i < h.length; i++) {
+        const days = (new Date(h[i].date) - new Date(h[i - 1].date)) / 864e5;
+        const used = h[i - 1].stock + (h[i].adj || 0) - h[i].stock;
+        if (days > 0 && used >= 0) iv.push({ days, used });
+    }
+    if (!iv.length) return { rate: item.dailyConsumption, method: 'manual', trend: 'steady', days: 0 };
+    const sum = a => a.reduce((s, x) => [s[0] + x.used, s[1] + x.days], [0, 0]);
+    const win = iv.slice(-14), [u, d] = sum(win), overall = u / d;
+    const [ru, rd] = sum(iv.slice(-3)), recent = ru / rd;
+    const rising = win.length >= 4 && recent >= overall * 1.25;
+    const falling = win.length >= 4 && recent <= overall * 0.75;
+    return {
+        rate: rising ? recent : overall, overall, recent, method: 'history', days: Math.round(d),
+        trend: rising ? 'rising' : falling ? 'falling' : 'steady'
+    };
+}
+
+function sparkline(item) {
+    const h = (item.history || []).slice(-14); if (h.length < 2) return '';
+    const mx = Math.max(...h.map(p => p.stock), 1), w = 90, ht = 22;
+    const pts = h.map((p, i) => `${(i / (h.length - 1) * w).toFixed(1)},${(ht - p.stock / mx * ht).toFixed(1)}`).join(' ');
+    return `<svg width="${w}" height="${ht}"><polyline points="${pts}" fill="none" stroke="#dc2626" stroke-width="2"/></svg>`;
+}
+function usageNote(i) { return i.usage.method === 'history' ? `${i.usage.days}d history · usage ${i.usage.trend}` : 'manual estimate'; }
+let leadTimeDays = 10;
+
+// Symmetric Distance Matrix (km)
 const distanceMatrix = {
     'Centre A': { 'Centre A': 0, 'Centre B': 15, 'Centre C': 9, 'Centre D': 22 },
     'Centre B': { 'Centre A': 15, 'Centre B': 0, 'Centre C': 12, 'Centre D': 8 },
@@ -32,7 +82,7 @@ const distanceMatrix = {
     'Centre D': { 'Centre A': 22, 'Centre B': 8, 'Centre C': 18, 'Centre D': 0 }
 };
 
-// Full name mapping for PHCs
+// PHC Full Names
 const centreNames = {
     'Centre A': 'Centre A (PHC Alpha - Rampur)',
     'Centre B': 'Centre B (PHC Beta - Sundarpur)',
@@ -40,7 +90,7 @@ const centreNames = {
     'Centre D': 'Centre D (PHC Delta - Krishnapur)'
 };
 
-// Helper: Format relative dates
+// Relative Date Helpers
 function getPastDateString(daysAgo) {
     const d = new Date();
     d.setDate(d.getDate() - daysAgo);
@@ -182,7 +232,7 @@ const initialBatchSeed = [
         centreId: 'Centre A',
         medicineName: 'Paracetamol Syrup (100ml)',
         quantity: 40,
-        expiryDate: getFutureDateString(180) // Valid 6 months
+        expiryDate: getFutureDateString(180)
     },
     {
         id: 'BAT-002',
@@ -190,7 +240,7 @@ const initialBatchSeed = [
         centreId: 'Centre C',
         medicineName: 'Paracetamol Syrup (100ml)',
         quantity: 180,
-        expiryDate: getFutureDateString(240) // Valid 8 months
+        expiryDate: getFutureDateString(240)
     },
     {
         id: 'BAT-003',
@@ -206,15 +256,15 @@ const initialBatchSeed = [
         centreId: 'Centre C',
         medicineName: 'ORS Electrolyte Packets',
         quantity: 50,
-        expiryDate: getFutureDateString(35) // NEAR EXPIRY (<60 days)
+        expiryDate: getFutureDateString(35)
     }
 ];
 
-// Persistent State Loaders
+// LocalStorage Persistent State Loaders
 function loadSavedInventory() {
     const saved = localStorage.getItem('aushadhi_inventory_state');
     if (saved) {
-        try { return JSON.parse(saved); } catch (e) { console.error('Error loading inventory from storage', e); }
+        try { return JSON.parse(saved); } catch (e) { console.error('Error parsing saved inventory', e); }
     }
     return JSON.parse(JSON.stringify(initialInventorySeed));
 }
@@ -222,12 +272,12 @@ function loadSavedInventory() {
 function loadSavedBatches() {
     const saved = localStorage.getItem('aushadhi_batch_state');
     if (saved) {
-        try { return JSON.parse(saved); } catch (e) { console.error('Error loading batches from storage', e); }
+        try { return JSON.parse(saved); } catch (e) { console.error('Error parsing saved batches', e); }
     }
     return JSON.parse(JSON.stringify(initialBatchSeed));
 }
 
-// Active Application State
+// Active State
 let inventoryState = loadSavedInventory();
 let batchState = loadSavedBatches();
 
@@ -264,12 +314,13 @@ function getDaysUntilExpiry(expiryDateStr) {
     return Math.floor(diffTime / (1000 * 60 * 60 * 24));
 }
 
-/**
- * Calculate estimated stockout date safely handling fractional days.
- */
+// Calculate estimated stockout date
 function calculateStockoutDate(daysRemaining) {
     if (!isFinite(daysRemaining) || isNaN(daysRemaining) || daysRemaining < 0) {
         return 'No Risk (0 Use)';
+    }
+    if (daysRemaining === 0) {
+        return 'OUT OF STOCK TODAY';
     }
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -278,13 +329,12 @@ function calculateStockoutDate(daysRemaining) {
 }
 
 /**
- * PRIORITY 3: Medicine Expiry Calculation Utility
- * Returns batch analysis for a specific centre & medicine item.
+ * Medicine Expiry Utility
  * Strictly EXCLUDES expired batch quantities from usable stock.
  */
 function getItemBatchAnalysis(centreId, medicineName) {
-    const matchingBatches = batchState.filter(b => 
-        b.centreId === centreId && 
+    const matchingBatches = batchState.filter(b =>
+        b.centreId === centreId &&
         b.medicineName.toLowerCase() === medicineName.toLowerCase()
     );
 
@@ -304,57 +354,61 @@ function getItemBatchAnalysis(centreId, medicineName) {
 }
 
 /**
- * Perform Forecasting Calculations for an inventory item
+ * Process Forecasting & Risk Classification for an inventory item
  */
 function processForecastItem(item) {
     const daysSinceUpdate = getDaysSince(item.lastUpdated);
     const isOutdated = daysSinceUpdate > 14 || daysSinceUpdate < 0;
 
-    // PRIORITY 3: DEDUCT EXPIRED BATCHES FROM USABLE STOCK
+    // Deduct expired batch stock from usable stock
     const { expiredQty, nearExpiryQty } = getItemBatchAnalysis(item.centreId, item.medicineName);
     const usableStock = Math.max(0, item.currentStock - expiredQty);
 
-    // 1. Estimated Days Remaining handling zero consumption safely
+    // Estimated Days Remaining handling zero stock & zero consumption
     let daysRemaining;
     if (item.dailyConsumption <= 0) {
         daysRemaining = Infinity;
+    } else if (usableStock === 0) {
+        daysRemaining = 0;
     } else {
         daysRemaining = usableStock / item.dailyConsumption;
     }
 
-    // 2. Shortfall & Target Stock Calculation
+    // Shortfall & Target Stock
     const targetStock = item.dailyConsumption * item.targetCoverageDays;
     const shortfall = Math.max(0, Math.round(targetStock - usableStock));
 
-    // 3. Donor Safe Surplus Calculation
+    // Donor Safe Surplus
     const safetyStock = item.dailyConsumption * item.targetCoverageDays;
     const rawSurplus = Math.max(0, Math.round(usableStock - safetyStock));
-    // CRITICAL: Outdated records CANNOT donate surplus (surplus = 0)
     const donorSurplus = isOutdated ? 0 : rawSurplus;
 
-    // 4. Status & Human-Readable Risk Reason Determination
+    // Risk Classification & Human-Readable Reason
     let status = 'SAFE';
     let riskReason = '';
 
     if (isOutdated) {
         status = 'OUTDATED';
-        riskReason = `Record updated ${daysSinceUpdate}d ago (>14d). Physical audit required.`;
+        riskReason = `Record updated ${daysSinceUpdate}d ago (>14d). Audit required.`;
+    } else if (usableStock === 0 && item.dailyConsumption > 0) {
+        status = 'CRITICAL';
+        riskReason = `OUT OF STOCK! Zero usable units remaining.`;
     } else if (daysRemaining <= leadTimeDays) {
         status = 'CRITICAL';
-        riskReason = `Stock depletes in ${daysRemaining.toFixed(1)}d (≤ ${leadTimeDays}d lead time). High stock-out risk.`;
+        riskReason = `Depletes in ${daysRemaining.toFixed(1)}d (≤ ${leadTimeDays}d lead time). High stock-out risk.`;
     } else if (daysRemaining <= leadTimeDays * 1.5) {
         status = 'WARNING';
-        riskReason = `Stock covers ${daysRemaining.toFixed(1)}d (≤ ${Math.round(leadTimeDays * 1.5)}d threshold). Reorder soon.`;
+        riskReason = `Covers ${daysRemaining.toFixed(1)}d (≤ ${Math.round(leadTimeDays * 1.5)}d threshold). Reorder soon.`;
     } else if (daysRemaining === Infinity) {
         status = 'SAFE';
-        riskReason = `Zero daily usage reported. Current stock intact.`;
+        riskReason = `Zero daily usage reported. Stock intact.`;
     } else {
         status = 'SAFE';
-        riskReason = `Stock covers ${daysRemaining.toFixed(1)}d safely exceeding ${leadTimeDays}d lead time.`;
+        riskReason = `Covers ${daysRemaining.toFixed(1)}d safely exceeding ${leadTimeDays}d lead time.`;
     }
 
     if (expiredQty > 0) {
-        riskReason += ` (${expiredQty} units expired & excluded).`;
+        riskReason += ` (${expiredQty} units expired & deducted).`;
     }
 
     return {
@@ -377,34 +431,33 @@ function processForecastItem(item) {
 }
 
 /**
- * Smart Redistribution & Allocation Algorithm
+ * Smart Inter-PHC Redistribution Algorithm
  */
 function computeRedistribution(processedInventory) {
     const suggestedTransfers = [];
     const districtRequirements = [];
 
-    // Step A: Filter items with shortfall > 0 (Recipients)
+    // Filter items with shortfall > 0 (Recipients), sorted by urgency
     const shortages = processedInventory
         .filter(item => item.shortfall > 0)
         .sort((a, b) => a.daysRemaining - b.daysRemaining);
 
-    // Step B: Create donor surplus map so surplus is NEVER allocated twice
+    // Surplus Tracker map (0 for outdated donors)
     const surplusTracker = {};
     processedInventory.forEach(item => {
         surplusTracker[item.id] = item.isOutdated ? 0 : item.donorSurplus;
     });
 
-    // Step C: Process each shortage item
     shortages.forEach(recipient => {
         let neededQty = recipient.shortfall;
         let totalAllocatedForRecipient = 0;
 
-        // Find candidate donors with same medicine & surplus > 0 & NOT outdated
+        // Candidate Donors (Not outdated, matching medicine, surplus > 0)
         const candidateDonors = processedInventory
-            .filter(donor => 
+            .filter(donor =>
                 !donor.isOutdated &&
-                donor.centreId !== recipient.centreId && 
-                donor.medicineName === recipient.medicineName && 
+                donor.centreId !== recipient.centreId &&
+                donor.medicineName === recipient.medicineName &&
                 surplusTracker[donor.id] > 0
             )
             .map(donor => {
@@ -413,7 +466,6 @@ function computeRedistribution(processedInventory) {
             })
             .sort((a, b) => a.distance - b.distance);
 
-        // Allocate surplus greedily across candidate donors
         candidateDonors.forEach(({ donorItem, distance }) => {
             if (neededQty <= 0) return;
 
@@ -421,11 +473,8 @@ function computeRedistribution(processedInventory) {
             if (availableSurplus <= 0) return;
 
             const transferAmount = Math.min(neededQty, availableSurplus);
+            const reasoning = `${donorItem.centreId} retains required safety stock. Available safe surplus: ${availableSurplus} units. Distance: ${distance} km.`;
 
-            // PRIORITY 2: Transparent Algorithm Reasoning
-            const reasoning = `${donorItem.centreId} holds ${availableSurplus} units safe surplus above safety stock. Distance: ${distance} km.`;
-
-            // Record Transfer Suggestion
             suggestedTransfers.push({
                 priority: recipient.isOutdated ? 'OUTDATED (Verify)' : (recipient.daysRemaining <= leadTimeDays ? 'CRITICAL' : 'WARNING'),
                 recipientCentre: recipient.centreId,
@@ -438,15 +487,15 @@ function computeRedistribution(processedInventory) {
                 reasoning
             });
 
-            // Update trackers
             surplusTracker[donorItem.id] -= transferAmount;
             neededQty -= transferAmount;
             totalAllocatedForRecipient += transferAmount;
         });
 
-        // Step D: Calculate remaining district requirement
+        // Calculate remaining district requirement
         const remainingDistrictReq = recipient.shortfall - totalAllocatedForRecipient;
-        if (remainingDistrictReq > 0 || recipient.shortfall > 0) {
+        // REQUIREMENT: Only list procurement rows where remaining requirement > 0!
+        if (remainingDistrictReq > 0) {
             districtRequirements.push({
                 centreId: recipient.centreId,
                 medicineName: recipient.medicineName,
@@ -463,15 +512,14 @@ function computeRedistribution(processedInventory) {
 }
 
 /**
- * PRIORITY 2: Execute Transfer Action
- * Updates donor stock and recipient stock in real-time.
+ * Execute Transfer Action with Batch Quantity Synchronization
  */
 function executeTransfer(donorCentre, recipientCentre, medicineName, qty) {
     const donorIdx = inventoryState.findIndex(i => i.centreId === donorCentre && i.medicineName === medicineName);
-    const recipientIdx = inventoryState.findIndex(i => i.centreId === recipientCentre && i.medicineName === medicineName);
+    let recipientIdx = inventoryState.findIndex(i => i.centreId === recipientCentre && i.medicineName === medicineName);
 
-    if (donorIdx < 0 || recipientIdx < 0) {
-        showToast('Error: Donor or Recipient inventory record not found.', 'error');
+    if (donorIdx < 0) {
+        showToast('Error: Donor inventory record not found.', 'error');
         return;
     }
 
@@ -480,21 +528,70 @@ function executeTransfer(donorCentre, recipientCentre, medicineName, qty) {
         return;
     }
 
-    // Execute stock transfer
+    // Re-verify donor surplus before executing
+    const donorProcessed = processForecastItem(inventoryState[donorIdx]);
+    if (donorProcessed.donorSurplus < qty) {
+        showToast(`Warning: Re-validation check failed. Donor surplus has changed (${donorProcessed.donorSurplus} units available).`, 'warning');
+        return;
+    }
+
+    // Deduct stock from Donor
     inventoryState[donorIdx].currentStock -= qty;
     inventoryState[donorIdx].lastUpdated = getPastDateString(0);
 
-    inventoryState[recipientIdx].currentStock += qty;
-    inventoryState[recipientIdx].lastUpdated = getPastDateString(0);
+    // Credit stock to Recipient
+    if (recipientIdx >= 0) {
+        inventoryState[recipientIdx].currentStock += qty;
+        inventoryState[recipientIdx].lastUpdated = getPastDateString(0);
+    } else {
+        inventoryState.push({
+            id: `INV-${Date.now()}`,
+            centreId: recipientCentre,
+            medicineName: medicineName,
+            currentStock: qty,
+            dailyConsumption: inventoryState[donorIdx].dailyConsumption || 5,
+            targetCoverageDays: inventoryState[donorIdx].targetCoverageDays || 30,
+            lastUpdated: getPastDateString(0)
+        });
+    }
+
+    // Batch Synchronization: Move valid batch quantities from Donor to Recipient
+    let remainingToMove = qty;
+    const donorBatches = batchState.filter(b =>
+        b.centreId === donorCentre &&
+        b.medicineName.toLowerCase() === medicineName.toLowerCase() &&
+        getDaysUntilExpiry(b.expiryDate) >= 0
+    );
+
+    donorBatches.forEach(b => {
+        if (remainingToMove <= 0) return;
+        const moveQty = Math.min(b.quantity, remainingToMove);
+        b.quantity -= moveQty;
+        remainingToMove -= moveQty;
+
+        // Add transferred batch record to Recipient
+        batchState.push({
+            id: `BAT-XFER-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+            batchNumber: `${b.batchNumber}-XFER`,
+            centreId: recipientCentre,
+            medicineName: medicineName,
+            quantity: moveQty,
+            expiryDate: b.expiryDate
+        });
+    });
+
+    // Clean up empty donor batches
+    batchState = batchState.filter(b => b.quantity > 0);
 
     saveStateToStorage();
+    populateDropdowns();
     renderDashboard();
 
     showToast(`⚡ Transferred ${qty} units of ${medicineName} from ${donorCentre} to ${recipientCentre}!`, 'success');
 }
 
 /**
- * PRIORITY 4: Render Facility Risk Overview Cards
+ * Render Facility Risk Overview Cards
  */
 function renderFacilityRiskMatrix(processedInventory) {
     const container = document.getElementById('facility-risk-container');
@@ -534,7 +631,7 @@ function renderFacilityRiskMatrix(processedInventory) {
             <div class="facility-metrics">
                 <div class="facility-stat">
                     <span class="facility-stat-label">Critical Items</span>
-                    <span class="facility-stat-val" style="color: ${criticalItems.length > 0 ? '#dc2626' : '#10b981'};">${criticalItems.length}</span>
+                    <span class="facility-stat-val" style="color: ${criticalItems.length > 0 ? '#dc2626' : '#16a34a'};">${criticalItems.length}</span>
                 </div>
                 <div class="facility-stat">
                     <span class="facility-stat-label">Shortfall Qty</span>
@@ -555,7 +652,7 @@ function renderFacilityRiskMatrix(processedInventory) {
 }
 
 /**
- * PRIORITY 5: Render What-If Supply Chain Simulator
+ * Render What-If Supply Chain Simulator
  */
 function renderSimulator(processedInventory) {
     const demandMult = parseFloat(document.getElementById('sim-demand-multiplier').value);
@@ -582,6 +679,8 @@ function renderSimulator(processedInventory) {
         let simDaysLeft;
         if (simCons <= 0) {
             simDaysLeft = Infinity;
+        } else if (simStock === 0) {
+            simDaysLeft = 0;
         } else {
             simDaysLeft = simStock / simCons;
         }
@@ -607,9 +706,9 @@ function renderSimulator(processedInventory) {
             <td><strong>${item.centreId}</strong></td>
             <td><strong>${item.medicineName}</strong></td>
             <td>${item.daysRemaining === Infinity ? 'Infinite' : item.daysRemaining.toFixed(1) + 'd'}</td>
-            <td><strong style="color: ${simDaysLeft <= effectiveLeadTime ? '#dc2626' : '#1e293b'};">${simDaysLeft === Infinity ? 'Infinite' : simDaysLeft.toFixed(1) + 'd'}</strong></td>
+            <td><strong style="color: ${simDaysLeft <= effectiveLeadTime ? '#dc2626' : '#111827'};">${simDaysLeft === Infinity ? 'Infinite' : simDaysLeft.toFixed(1) + 'd'}</strong></td>
             <td>${simStockoutDate}</td>
-            <td><span class="badge ${item.status === 'CRITICAL' ? 'badge-critical' : 'badge-safe'}">${item.status}</span></td>
+            <td><span class="badge ${item.status === 'CRITICAL' ? 'badge-critical' : (item.status === 'WARNING' ? 'badge-warning' : 'badge-safe')}">${item.status}</span></td>
             <td><span class="badge ${simStatus === 'CRITICAL' ? 'badge-critical' : (simStatus === 'WARNING' ? 'badge-warning' : 'badge-safe')}">${simStatus}</span></td>
             <td>${simShortfall > 0 ? `<strong style="color:#dc2626;">${simShortfall} units</strong>` : '0'}</td>
         `;
@@ -617,13 +716,13 @@ function renderSimulator(processedInventory) {
     });
 
     if (demandMult > 1.0 || delayDays > 0 || shockPercent > 0) {
-        banner.className = 'sim-impact-banner';
+        banner.className = 'sim-status-banner';
         banner.style.backgroundColor = '#fef2f2';
         banner.style.borderColor = '#fca5a5';
         banner.style.color = '#dc2626';
         banner.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> <strong>Simulation Active:</strong> ${simCriticalCount} critical shortages projected (+${simTotalReq} units district requirement under stress conditions).`;
     } else {
-        banner.className = 'sim-impact-banner';
+        banner.className = 'sim-status-banner';
         banner.style.backgroundColor = '#eff6ff';
         banner.style.borderColor = '#bfdbfe';
         banner.style.color = '#1e40af';
@@ -632,7 +731,7 @@ function renderSimulator(processedInventory) {
 }
 
 /**
- * Render Batch & Expiry Management Table
+ * Render Medicine Batch & Expiry Management Table
  */
 function renderBatchTable() {
     const tbody = document.getElementById('batch-tbody');
@@ -640,7 +739,7 @@ function renderBatchTable() {
     tbody.innerHTML = '';
 
     if (batchState.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: #64748b; padding: 2rem;">No registered medicine batches found.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: #6b7280; padding: 2rem;">No registered medicine batches found.</td></tr>`;
         return;
     }
 
@@ -677,7 +776,6 @@ function renderBatchTable() {
         tbody.appendChild(tr);
     });
 
-    // Add delete event listeners
     document.querySelectorAll('.btn-delete-batch').forEach(btn => {
         btn.addEventListener('click', (e) => {
             const batchId = e.currentTarget.dataset.id;
@@ -692,13 +790,13 @@ function renderBatchTable() {
 }
 
 /**
- * UI Render Engine
+ * Main UI Render Engine
  */
 function renderDashboard() {
     // 1. Process all inventory items
     const processedList = inventoryState.map(processForecastItem);
 
-    // 2. Filter list based on UI Controls
+    // 2. Apply Filters
     const searchVal = document.getElementById('filter-search').value.trim().toLowerCase();
     const centreVal = document.getElementById('filter-centre').value;
     const medVal = document.getElementById('filter-medicine').value;
@@ -706,8 +804,8 @@ function renderDashboard() {
 
     const filteredList = processedList.filter(item => {
         const matchesSearch = item.centreId.toLowerCase().includes(searchVal) ||
-                              item.medicineName.toLowerCase().includes(searchVal) ||
-                              centreNames[item.centreId]?.toLowerCase().includes(searchVal);
+            item.medicineName.toLowerCase().includes(searchVal) ||
+            centreNames[item.centreId]?.toLowerCase().includes(searchVal);
         const matchesCentre = (centreVal === 'ALL' || item.centreId === centreVal);
         const matchesMed = (medVal === 'ALL' || item.medicineName === medVal);
         const matchesUrgency = (urgencyVal === 'ALL' || item.status === urgencyVal);
@@ -715,16 +813,15 @@ function renderDashboard() {
         return matchesSearch && matchesCentre && matchesMed && matchesUrgency;
     });
 
-    // 3. Compute Redistribution
+    // 3. Compute Redistribution Engine
     const { suggestedTransfers, districtRequirements } = computeRedistribution(processedList);
 
-    // 4. Update KPI Metrics
+    // 4. Update Summary KPI Metrics
     const uniqueCentres = new Set(processedList.map(i => i.centreId)).size;
     const uniqueMeds = new Set(processedList.map(i => i.medicineName)).size;
     const criticalCount = processedList.filter(i => i.status === 'CRITICAL').length;
     const totalTransferUnits = suggestedTransfers.reduce((acc, t) => acc + t.transferQty, 0);
     const totalDistrictReqUnits = districtRequirements.reduce((acc, d) => acc + d.remainingDistrictReq, 0);
-
     const expiredBatchesCount = batchState.filter(b => getDaysUntilExpiry(b.expiryDate) < 0 || getDaysUntilExpiry(b.expiryDate) <= 60).length;
 
     document.getElementById('metric-centres').textContent = uniqueCentres;
@@ -735,13 +832,45 @@ function renderDashboard() {
     document.getElementById('metric-district-req').textContent = totalDistrictReqUnits;
     document.getElementById('metric-expired').textContent = expiredBatchesCount;
 
-    // 5. Render Inventory Table
+    // 5. Render Overview / Needs Attention Table
+    const tbodyOverview = document.getElementById('overview-tbody');
+    tbodyOverview.innerHTML = '';
+    const needsAttentionItems = filteredList.filter(i => i.status === 'CRITICAL' || i.status === 'WARNING' || i.status === 'OUTDATED');
+    document.getElementById('needs-attention-count').textContent = `${needsAttentionItems.length} items need attention`;
+
+    if (needsAttentionItems.length === 0) {
+        tbodyOverview.innerHTML = `<tr><td colspan="9" style="text-align: center; color: #16a34a; padding: 2rem;"><i class="fa-solid fa-circle-check"></i> All Primary Health Centres are currently operate within safe stock levels!</td></tr>`;
+    } else {
+        needsAttentionItems.forEach(item => {
+            const tr = document.createElement('tr');
+            if (item.status === 'CRITICAL') tr.className = 'row-critical';
+            if (item.status === 'OUTDATED') tr.className = 'row-outdated';
+
+            let badgeClass = item.status === 'CRITICAL' ? 'badge-critical' : (item.status === 'WARNING' ? 'badge-warning' : 'badge-outdated');
+            let actionText = item.status === 'CRITICAL' ? 'Execute Transfer / Order District Stock' : (item.status === 'WARNING' ? 'Prepare Reorder' : 'Verify Physical Stock');
+
+            tr.innerHTML = `
+                <td><span class="badge ${badgeClass}">${item.status}</span></td>
+                <td><strong>${item.centreId}</strong> <br><small style="color:#6b7280;">${centreNames[item.centreId] || ''}</small></td>
+                <td><strong>${item.medicineName}</strong></td>
+                <td><strong>${item.usableStock}</strong></td>
+                <td>${item.dailyConsumption} / day</td>
+                <td><strong>${item.daysRemaining === Infinity ? 'Infinite' : item.daysRemaining.toFixed(1) + 'd'}</strong></td>
+                <td>${item.stockoutDate}</td>
+                <td><small style="color:#4b5563;">${item.riskReason}</small></td>
+                <td><span class="btn btn-outline btn-sm">${actionText}</span></td>
+            `;
+            tbodyOverview.appendChild(tr);
+        });
+    }
+
+    // 6. Render Full Inventory Table
     const tbodyInv = document.getElementById('inventory-tbody');
     tbodyInv.innerHTML = '';
     document.getElementById('inventory-count').textContent = `Showing ${filteredList.length} of ${processedList.length} items`;
 
     if (filteredList.length === 0) {
-        tbodyInv.innerHTML = `<tr><td colspan="10" style="text-align: center; color: #64748b; padding: 2rem;">No matching medicine stock records found.</td></tr>`;
+        tbodyInv.innerHTML = `<tr><td colspan="10" style="text-align: center; color: #6b7280; padding: 2rem;">No matching medicine stock records found.</td></tr>`;
     } else {
         filteredList.forEach(item => {
             const tr = document.createElement('tr');
@@ -749,40 +878,23 @@ function renderDashboard() {
             if (item.status === 'OUTDATED') tr.className = 'row-outdated';
 
             let daysText = (item.daysRemaining === Infinity) ? 'Infinite (0 use)' : `${item.daysRemaining.toFixed(1)} days`;
-            let badgeClass = 'badge-safe';
-            let badgeIcon = 'fa-check-circle';
-
-            if (item.status === 'CRITICAL') {
-                badgeClass = 'badge-critical';
-                badgeIcon = 'fa-triangle-exclamation';
-            } else if (item.status === 'WARNING') {
-                badgeClass = 'badge-warning';
-                badgeIcon = 'fa-clock';
-            } else if (item.status === 'OUTDATED') {
-                badgeClass = 'badge-outdated';
-                badgeIcon = 'fa-calendar-xmark';
-            }
-
-            let statusLabel = item.status;
-            if (item.status === 'OUTDATED') {
-                statusLabel = `Outdated (${item.daysSinceUpdate}d ago)`;
-            }
+            let badgeClass = item.status === 'CRITICAL' ? 'badge-critical' : (item.status === 'WARNING' ? 'badge-warning' : (item.status === 'OUTDATED' ? 'badge-outdated' : 'badge-safe'));
 
             tr.innerHTML = `
-                <td><strong>${item.centreId}</strong> <br><small style="color:#64748b;">${centreNames[item.centreId] || ''}</small></td>
+                <td><strong>${item.centreId}</strong> <br><small style="color:#6b7280;">${centreNames[item.centreId] || ''}</small></td>
                 <td><strong>${item.medicineName}</strong></td>
-                <td><strong>${item.usableStock}</strong> <br><small style="color:#64748b;">(${item.currentStock} total)</small></td>
+                <td><strong>${item.usableStock}</strong> <br><small style="color:#6b7280;">(${item.currentStock} total)</small></td>
                 <td>${item.dailyConsumption} / day</td>
                 <td><strong>${daysText}</strong></td>
                 <td>${item.stockoutDate}</td>
                 <td>${item.targetCoverageDays}d (${item.targetStock} units)</td>
-                <td>${item.shortfall > 0 ? `<span style="color:#dc2626; font-weight:bold;">${item.shortfall} units</span>` : '<span style="color:#10b981;">None</span>'}</td>
+                <td>${item.shortfall > 0 ? `<span style="color:#dc2626; font-weight:bold;">${item.shortfall} units</span>` : '<span style="color:#16a34a;">None</span>'}</td>
                 <td>
-                    <span class="badge ${badgeClass}"><i class="fa-solid ${badgeIcon}"></i> ${statusLabel}</span>
-                    <br><small style="color:#64748b; font-size: 0.725rem;">${item.riskReason}</small>
+                    <span class="badge ${badgeClass}">${item.status}</span>
+                    <br><small style="color:#6b7280; font-size: 0.725rem;">${item.riskReason}</small>
                 </td>
                 <td>
-                    <button class="btn btn-secondary btn-sm btn-delete-item" data-id="${item.id}">
+                    <button class="btn btn-outline btn-sm btn-delete-item" data-id="${item.id}">
                         <i class="fa-solid fa-trash"></i>
                     </button>
                 </td>
@@ -790,7 +902,6 @@ function renderDashboard() {
             tbodyInv.appendChild(tr);
         });
 
-        // Add Delete Item Listener
         document.querySelectorAll('.btn-delete-item').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const itemId = e.currentTarget.dataset.id;
@@ -804,27 +915,30 @@ function renderDashboard() {
         });
     }
 
-    // 6. Render Redistribution Table with Execute Action Button
+    // 7. Render Redistribution Table with Visual Route Diagram
     const tbodyTrans = document.getElementById('transfer-tbody');
     tbodyTrans.innerHTML = '';
 
     if (suggestedTransfers.length === 0) {
-        tbodyTrans.innerHTML = `<tr><td colspan="8" style="text-align: center; color: #64748b; padding: 2rem;">No surplus transfers required currently. All health centres are within safe stock thresholds!</td></tr>`;
+        tbodyTrans.innerHTML = `<tr><td colspan="7" style="text-align: center; color: #6b7280; padding: 2rem;">No surplus transfers required currently. All health centres operate within safe stock levels!</td></tr>`;
     } else {
         suggestedTransfers.forEach((t, idx) => {
             const tr = document.createElement('tr');
-            let badgeClass = 'badge-warning';
-            if (t.priority.includes('CRITICAL')) badgeClass = 'badge-critical';
-            if (t.priority.includes('OUTDATED')) badgeClass = 'badge-outdated';
+            let badgeClass = t.priority.includes('CRITICAL') ? 'badge-critical' : (t.priority.includes('OUTDATED') ? 'badge-outdated' : 'badge-warning');
 
             tr.innerHTML = `
                 <td><span class="badge ${badgeClass}">#${idx + 1} ${t.priority}</span></td>
-                <td><strong>${t.recipientCentre}</strong> ${t.recipientIsOutdated ? '<br><small style="color:#a855f7;">(Verify Stale Recipient)</small>' : ''}</td>
-                <td><strong>${t.donorCentre}</strong></td>
-                <td>${t.medicineName}</td>
-                <td><i class="fa-solid fa-location-dot"></i> ${t.distanceKm} km</td>
-                <td><strong style="color:#0284c7; font-size: 1rem;">${t.transferQty} units</strong></td>
-                <td><small style="color:#475569;">${t.reasoning}</small></td>
+                <td>
+                    <div class="transfer-route-box">
+                        <span class="route-phc">${t.donorCentre}</span>
+                        <span class="route-arrow"><i class="fa-solid fa-arrow-right"></i> ${t.distanceKm} km</span>
+                        <span class="route-phc">${t.recipientCentre}</span>
+                    </div>
+                </td>
+                <td><strong>${t.medicineName}</strong></td>
+                <td>${t.distanceKm} km</td>
+                <td><strong style="color:#0284c7; font-size: 0.95rem;">${t.transferQty} units</strong></td>
+                <td><small style="color:#4b5563;">${t.reasoning}</small></td>
                 <td>
                     <button class="btn btn-success btn-sm btn-exec-transfer" 
                         data-donor="${t.donorCentre}" 
@@ -838,52 +952,51 @@ function renderDashboard() {
             tbodyTrans.appendChild(tr);
         });
 
-        // Add Execute Transfer Button Listeners
         document.querySelectorAll('.btn-exec-transfer').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const { donor, recipient, medicine, qty } = e.currentTarget.dataset;
                 const transferQty = parseInt(qty, 10);
+                const recipientItem = inventoryState.find(i => i.centreId === recipient && i.medicineName === medicine);
+                const isOutdated = recipientItem && getDaysSince(recipientItem.lastUpdated) > 14;
 
-                showConfirmModal(
-                    'Confirm Stock Transfer',
-                    `Do you want to execute a transfer of ${transferQty} units of ${medicine} from ${donor} to ${recipient}?`,
-                    () => {
-                        executeTransfer(donor, recipient, medicine, transferQty);
-                    }
-                );
+                const msg = isOutdated ?
+                    `⚠️ WARNING: Recipient ${recipient} inventory record is outdated (>14 days). Physical stock audit is recommended. Are you sure you want to execute transfer of ${transferQty} units of ${medicine} from ${donor}?` :
+                    `Confirm execution of stock transfer: ${transferQty} units of ${medicine} from ${donor} to ${recipient}?`;
+
+                showConfirmModal('Review Stock Transfer', msg, () => {
+                    executeTransfer(donor, recipient, medicine, transferQty);
+                });
             });
         });
     }
 
-    // 7. Render District Procurement Requirements Table
+    // 8. Render District Procurement Requirements Table (Filter remainingDistrictReq > 0)
     const tbodyDist = document.getElementById('district-tbody');
     tbodyDist.innerHTML = '';
 
     if (districtRequirements.length === 0) {
-        tbodyDist.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #64748b; padding: 2rem;">No additional district procurement required. All shortfalls covered by PHC surpluses!</td></tr>`;
+        tbodyDist.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #16a34a; padding: 2rem;"><i class="fa-solid fa-circle-check"></i> No additional district procurement required. All shortfalls covered by safe PHC transfers!</td></tr>`;
     } else {
         districtRequirements.forEach(d => {
             const tr = document.createElement('tr');
-            let badgeClass = 'badge-warning';
-            if (d.status === 'CRITICAL') badgeClass = 'badge-critical';
-            if (d.status === 'OUTDATED') badgeClass = 'badge-outdated';
+            let badgeClass = d.status === 'CRITICAL' ? 'badge-critical' : (d.status === 'OUTDATED' ? 'badge-outdated' : 'badge-warning');
 
             tr.innerHTML = `
                 <td><strong>${d.centreId}</strong></td>
                 <td><strong>${d.medicineName}</strong></td>
                 <td>${d.totalShortfall} units</td>
                 <td>${d.coveredBySurplus} units</td>
-                <td><strong style="color:#dc2626; font-size: 1.05rem;">${d.remainingDistrictReq} units</strong></td>
+                <td><strong style="color:#dc2626; font-size: 1rem;">${d.remainingDistrictReq} units</strong></td>
                 <td>
                     <span class="badge ${badgeClass}">${d.status}</span>
-                    ${d.isOutdated ? '<br><small style="color:#a855f7;">(Manual Audit Needed)</small>' : ''}
+                    ${d.isOutdated ? '<br><small style="color:#7e22ce;">(Manual Audit Needed)</small>' : ''}
                 </td>
             `;
             tbodyDist.appendChild(tr);
         });
     }
 
-    // 8. Render Batch Table, Facility Risk Matrix & Simulator
+    // 9. Render Auxiliary Views
     renderBatchTable();
     renderFacilityRiskMatrix(processedList);
     renderSimulator(processedList);
@@ -896,7 +1009,7 @@ function renderDashboard() {
 function renderDistanceMatrix() {
     const table = document.getElementById('distance-matrix-table');
     const centres = Object.keys(distanceMatrix);
-    
+
     let html = `<thead><tr><th>PHC Centre</th>`;
     centres.forEach(c => { html += `<th>${c}</th>`; });
     html += `</tr></thead><tbody>`;
@@ -918,7 +1031,7 @@ function renderDistanceMatrix() {
 }
 
 /**
- * Populate Dropdown Filters and Modal Options
+ * Populate Dropdowns
  */
 function populateDropdowns() {
     const centreSelects = [
@@ -954,7 +1067,7 @@ function populateDropdowns() {
 }
 
 /**
- * DEMO SCENARIO LOADER (Benchmark Verification)
+ * DEMO SCENARIO LOADER (Benchmark Benchmark)
  */
 function loadDemoScenario() {
     inventoryState = [
@@ -1008,7 +1121,7 @@ function loadDemoScenario() {
     populateDropdowns();
     renderDashboard();
 
-    switchTab('tab-inventory');
+    switchTab('tab-overview');
 
     showToast('⚡ Demonstration Scenario Loaded! Check Centre A (6 days left) and Centre C (140 safe surplus).', 'warning');
 }
@@ -1043,10 +1156,7 @@ function showToast(message, type = 'info') {
 
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
-    let iconClass = 'fa-info-circle';
-    if (type === 'success') iconClass = 'fa-circle-check';
-    if (type === 'warning') iconClass = 'fa-triangle-exclamation';
-    if (type === 'error') iconClass = 'fa-circle-xmark';
+    let iconClass = type === 'success' ? 'fa-circle-check' : (type === 'warning' ? 'fa-triangle-exclamation' : (type === 'error' ? 'fa-circle-xmark' : 'fa-info-circle'));
 
     toast.innerHTML = `<i class="fa-solid ${iconClass}"></i> <span>${message}</span>`;
     container.appendChild(toast);
@@ -1078,10 +1188,10 @@ function closeConfirmModal() {
 }
 
 /**
- * Tab Switching Functionality
+ * Tab Navigation
  */
 function switchTab(tabId) {
-    document.querySelectorAll('.tab-btn').forEach(btn => {
+    document.querySelectorAll('.nav-tab').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.tab === tabId);
     });
     document.querySelectorAll('.tab-content').forEach(content => {
@@ -1090,13 +1200,12 @@ function switchTab(tabId) {
 }
 
 /**
- * Event Listeners & Initialization
+ * Event Initialization
  */
 document.addEventListener('DOMContentLoaded', () => {
     populateDropdowns();
     renderDashboard();
 
-    // Lead Time Input Change
     document.getElementById('input-lead-time').addEventListener('input', (e) => {
         const val = parseInt(e.target.value, 10);
         if (!isNaN(val) && val > 0) {
@@ -1105,15 +1214,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Filters Event Listeners
     document.getElementById('filter-search').addEventListener('input', renderDashboard);
     document.getElementById('filter-centre').addEventListener('change', renderDashboard);
     document.getElementById('filter-medicine').addEventListener('change', renderDashboard);
     document.getElementById('filter-urgency').addEventListener('change', renderDashboard);
 
-    // Action Buttons with Confirmation
     document.getElementById('btn-demo').addEventListener('click', () => {
-        showConfirmModal('Load Demo Scenario', 'Do you want to load the hackathon demonstration scenario benchmark?', () => {
+        showConfirmModal('Load Benchmark Demo Scenario', 'Do you want to load the 24-hour hackathon benchmark demo scenario?', () => {
             loadDemoScenario();
         });
     });
@@ -1124,7 +1231,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // Confirm Modal Button Actions
     document.getElementById('btn-action-confirm').addEventListener('click', () => {
         if (pendingConfirmAction) pendingConfirmAction();
         closeConfirmModal();
@@ -1132,12 +1238,10 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-cancel-confirm').addEventListener('click', closeConfirmModal);
     document.getElementById('btn-close-confirm').addEventListener('click', closeConfirmModal);
 
-    // Navigation Tabs
-    document.querySelectorAll('.tab-btn').forEach(btn => {
+    document.querySelectorAll('.nav-tab').forEach(btn => {
         btn.addEventListener('click', () => switchTab(btn.dataset.tab));
     });
 
-    // Simulator Sliders Event Listeners
     ['sim-demand-multiplier', 'sim-delay-days', 'sim-supply-shock'].forEach(id => {
         document.getElementById(id).addEventListener('input', () => {
             const processedList = inventoryState.map(processForecastItem);
@@ -1154,7 +1258,7 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast('Simulator parameters reset to baseline.', 'info');
     });
 
-    // Inventory Modal Control
+    // Inventory Modal Controls
     const modalStock = document.getElementById('modal-stock');
     const btnOpenStockModal = document.getElementById('btn-add-modal');
     const formStock = document.getElementById('form-stock');
@@ -1171,7 +1275,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // Add Stock Form Submit
     formStock.addEventListener('submit', (e) => {
         e.preventDefault();
 
@@ -1187,8 +1290,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const existingIdx = inventoryState.findIndex(i => 
-            i.centreId === centreId && 
+        const existingIdx = inventoryState.findIndex(i =>
+            i.centreId === centreId &&
             i.medicineName.toLowerCase() === medicineName.toLowerCase()
         );
 
@@ -1218,7 +1321,7 @@ document.addEventListener('DOMContentLoaded', () => {
         formStock.reset();
     });
 
-    // Batch Modal Control
+    // Batch Modal Controls
     const modalBatch = document.getElementById('modal-batch');
     const btnOpenBatchModal = document.getElementById('btn-add-batch-modal');
     const formBatch = document.getElementById('form-batch');
@@ -1240,7 +1343,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Add Batch Form Submit
     formBatch.addEventListener('submit', (e) => {
         e.preventDefault();
 
