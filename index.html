@@ -1,18 +1,22 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="AushadhiAlert PHC — Primary Health Centre Medicine Stock-Out Early Warning & Safe Redistribution System">
+    <meta name="description"
+        content="AushadhiAlert PHC — Primary Health Centre Medicine Stock-Out Early Warning & Safe Redistribution System">
     <title>AushadhiAlert PHC — Healthcare Supply Chain Operations</title>
     <!-- Google Fonts: Plus Jakarta Sans for clean typography -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+        rel="stylesheet">
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
     <!-- Product Header Bar -->
     <header class="app-header">
@@ -22,11 +26,11 @@
                     <i class="fa-solid fa-square-plus"></i>
                 </div>
                 <div>
-                    <h1>AUSHADHI-ALERT</h1>
+                    <h1>MEDI-CARE</h1>
                     <p class="subtitle">PHC Medicine Stock-Out Early Warning & Redistribution Engine</p>
                 </div>
             </div>
-            
+
             <div class="header-actions">
                 <span class="demo-mode-pill" title="Simulated demonstration data mode for evaluation">
                     <i class="fa-solid fa-flask"></i> DEMO MODE DATA
@@ -47,7 +51,8 @@
     <!-- Operational Banner -->
     <div class="notice-banner">
         <i class="fa-solid fa-circle-info"></i>
-        <span><strong>Hackathon Prototype Notice:</strong> System uses in-memory data with browser storage backup. All transfer recommendations require official health authority authorization before dispatch.</span>
+        <span><strong>Hackathon Prototype Notice:</strong> System uses in-memory data with browser storage backup. All
+            transfer recommendations require official health authority authorization before dispatch.</span>
     </div>
 
     <!-- Main Container -->
@@ -158,7 +163,8 @@
                 <div class="panel-header">
                     <div>
                         <h2><i class="fa-solid fa-bell"></i> Critical Shortages & Action Items</h2>
-                        <p class="panel-desc">Primary Health Centres requiring immediate attention due to imminent medicine depletion.</p>
+                        <p class="panel-desc">Primary Health Centres requiring immediate attention due to imminent
+                            medicine depletion.</p>
                     </div>
                     <span class="count-pill" id="needs-attention-count">0 items need action</span>
                 </div>
@@ -192,8 +198,10 @@
                 <div class="panel">
                     <div class="panel-header">
                         <div>
-                            <h2><i class="fa-solid fa-truck-ramp-box"></i> Inter-PHC Safe Surplus Transfer Recommendations</h2>
-                            <p class="panel-desc">Greedy optimization matching nearby surplus donor PHCs to recipient shortages while strictly preserving donor safety stock.</p>
+                            <h2><i class="fa-solid fa-truck-ramp-box"></i> Inter-PHC Safe Surplus Transfer
+                                Recommendations</h2>
+                            <p class="panel-desc">Greedy optimization matching nearby surplus donor PHCs to recipient
+                                shortages while strictly preserving donor safety stock.</p>
                         </div>
                     </div>
                     <div class="table-container">
@@ -220,8 +228,10 @@
                 <div class="panel">
                     <div class="panel-header">
                         <div>
-                            <h2><i class="fa-solid fa-warehouse"></i> Remaining District Authority Procurement Deficit</h2>
-                            <p class="panel-desc">Shortfalls that CANNOT be satisfied by nearby PHC safe surplus and require immediate district purchase/dispatch.</p>
+                            <h2><i class="fa-solid fa-warehouse"></i> Remaining District Authority Procurement Deficit
+                            </h2>
+                            <p class="panel-desc">Shortfalls that CANNOT be satisfied by nearby PHC safe surplus and
+                                require immediate district purchase/dispatch.</p>
                         </div>
                     </div>
                     <div class="table-container">
@@ -251,7 +261,8 @@
                 <div class="panel-header">
                     <div>
                         <h2><i class="fa-solid fa-list-check"></i> Complete PHC Medicine Inventory Forecasts</h2>
-                        <p class="panel-desc">Stockout forecasts based on physical stock minus expired batch quantities, daily consumption, and lead-time risk parameters.</p>
+                        <p class="panel-desc">Stockout forecasts based on physical stock minus expired batch quantities,
+                            daily consumption, and lead-time risk parameters.</p>
                     </div>
                     <span class="count-pill" id="inventory-count">Showing 0 items</span>
                 </div>
@@ -285,7 +296,8 @@
                 <div class="panel-header">
                     <div>
                         <h2><i class="fa-solid fa-boxes-stacked"></i> Medicine Batch & Expiry Management</h2>
-                        <p class="panel-desc">Tracks batch numbers, manufacturing dates, expiry dates, and automatically excludes expired quantities from usable inventory.</p>
+                        <p class="panel-desc">Tracks batch numbers, manufacturing dates, expiry dates, and automatically
+                            excludes expired quantities from usable inventory.</p>
                     </div>
                     <button id="btn-add-batch-modal" class="btn btn-primary btn-sm">
                         <i class="fa-solid fa-plus"></i> Register Batch
@@ -323,7 +335,8 @@
                 <div class="panel-header">
                     <div>
                         <h2><i class="fa-solid fa-map-location-dot"></i> PHC Geographic Distance Matrix (km)</h2>
-                        <p class="panel-desc">Inter-PHC distances used by the redistribution engine to prefer nearby donor clinics.</p>
+                        <p class="panel-desc">Inter-PHC distances used by the redistribution engine to prefer nearby
+                            donor clinics.</p>
                     </div>
                 </div>
                 <div class="table-container">
@@ -340,7 +353,8 @@
                 <div class="sim-header">
                     <div>
                         <h2><i class="fa-solid fa-sliders"></i> Interactive What-If Supply Chain & Demand Simulator</h2>
-                        <p class="panel-desc">Stress test the healthcare network against disease outbreak surges, monsoon logistics delays, or supply damage shocks.</p>
+                        <p class="panel-desc">Stress test the healthcare network against disease outbreak surges,
+                            monsoon logistics delays, or supply damage shocks.</p>
                     </div>
                     <button id="btn-reset-sim" class="btn btn-outline btn-sm">
                         <i class="fa-solid fa-rotate-left"></i> Reset Simulator
@@ -354,7 +368,8 @@
                             <strong id="val-demand-multiplier">1.0x</strong>
                         </label>
                         <input type="range" id="sim-demand-multiplier" min="1.0" max="3.0" step="0.1" value="1.0">
-                        <p class="sim-note">Simulates patient consumption surges during seasonal outbreaks (e.g. 2.0x surge).</p>
+                        <p class="sim-note">Simulates patient consumption surges during seasonal outbreaks (e.g. 2.0x
+                            surge).</p>
                     </div>
 
                     <div class="sim-card">
@@ -377,7 +392,8 @@
                 </div>
 
                 <div class="sim-status-banner" id="sim-impact-summary">
-                    <i class="fa-solid fa-circle-check"></i> Baseline mode active. Adjust sliders above to stress test supply network.
+                    <i class="fa-solid fa-circle-check"></i> Baseline mode active. Adjust sliders above to stress test
+                    supply network.
                 </div>
 
                 <div class="panel">
@@ -410,7 +426,8 @@
 
     <!-- Footer -->
     <footer class="app-footer">
-        <p>AUSHADHI-ALERT Healthcare Operations &copy; 2026. Designed for Primary Health Centres & District Health Officers.</p>
+        <p>AUSHADHI-ALERT Healthcare Operations &copy; 2026. Designed for Primary Health Centres & District Health
+            Officers.</p>
         <p class="footer-sub">Hackathon Prototype Mode. No live external government backend or paid APIs required.</p>
     </footer>
 
@@ -526,4 +543,5 @@
 
     <script src="script.js"></script>
 </body>
+
 </html>
