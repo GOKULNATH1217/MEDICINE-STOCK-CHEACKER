@@ -33,6 +33,14 @@
     --color-outdated-bg: #faf5ff;
     --color-outdated-border: #d8b4fe;
 
+    --color-recipient-bg: #dbeafe;
+    --color-recipient-text: #1e40af;
+    --color-recipient-border: #bfdbfe;
+
+    --color-donor-bg: #d1fae5;
+    --color-donor-text: #065f46;
+    --color-donor-border: #6ee7b7;
+
     --color-primary: #134e4a;
     --color-primary-hover: #0f382c;
     --color-accent: #0284c7;
@@ -72,6 +80,14 @@
     --color-outdated: #c084fc;
     --color-outdated-bg: #2d0b4e;
     --color-outdated-border: #581c87;
+
+    --color-recipient-bg: #1e3a8a;
+    --color-recipient-text: #93c5fd;
+    --color-recipient-border: #1d4ed8;
+
+    --color-donor-bg: #064e3b;
+    --color-donor-text: #6ee7b7;
+    --color-donor-border: #047857;
 
     --color-primary: #10b981;
     --color-primary-hover: #059669;
@@ -787,29 +803,36 @@ body {
     color: var(--color-text-muted);
 }
 
-/* Navigation Tabs */
+/* Navigation Tabs Bar & Sticky Layout */
 .nav-bar {
     display: flex;
     gap: 0.35rem;
-    margin-bottom: 1rem;
+    margin-bottom: 1.25rem;
     border-bottom: 2px solid var(--color-border);
     overflow-x: auto;
+    position: sticky;
+    top: 73px;
+    z-index: 95;
+    background-color: var(--color-bg);
+    padding-top: 0.5rem;
+    padding-bottom: 0.1rem;
 }
 
 .nav-tab {
     font-family: inherit;
     font-size: 0.825rem;
     font-weight: 700;
-    background: transparent;
-    border: none;
-    padding: 0.6rem 1rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-bottom: none;
+    padding: 0.65rem 1rem;
     color: var(--color-text-muted);
     cursor: pointer;
     border-radius: var(--radius-md) var(--radius-md) 0 0;
     transition: all 0.15s ease;
     display: inline-flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: 0.45rem;
     white-space: nowrap;
 }
 
@@ -820,8 +843,31 @@ body {
 
 .nav-tab.active {
     color: var(--color-primary);
+    border-color: var(--color-primary);
     border-bottom: 3px solid var(--color-primary);
     background-color: var(--color-surface);
+    box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.05);
+}
+
+/* Tab Content Visibility & Smooth Fade Animation */
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+    animation: tabFadeIn 0.2s ease-in-out;
+}
+
+@keyframes tabFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 /* Content Panels */
@@ -911,7 +957,7 @@ body {
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
-    background-color: #f8fafc;
+    background-color: var(--color-surface-alt);
     border: 1px solid var(--color-border);
     padding: 0.4rem 0.75rem;
     border-radius: var(--radius-md);
@@ -925,12 +971,12 @@ body {
 }
 
 .route-arrow {
-    color: #0284c7;
+    color: var(--color-recipient-text);
     font-size: 0.75rem;
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
-    background-color: #e0f2fe;
+    background-color: var(--color-recipient-bg);
     padding: 0.15rem 0.5rem;
     border-radius: var(--radius-sm);
 }
@@ -958,13 +1004,15 @@ body {
 }
 
 .impact-recipient-tag {
-    background-color: #dbeafe;
-    color: #1e40af;
+    background-color: var(--color-recipient-bg);
+    color: var(--color-recipient-text);
+    border: 1px solid var(--color-recipient-border);
 }
 
 .impact-donor-tag {
-    background-color: #d1fae5;
-    color: #065f46;
+    background-color: var(--color-donor-bg);
+    color: var(--color-donor-text);
+    border: 1px solid var(--color-donor-border);
 }
 
 /* Transfer Impact Modal Grid */
@@ -985,7 +1033,7 @@ body {
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
     padding: 0.85rem;
-    background-color: #f8fafc;
+    background-color: var(--color-surface-alt);
     display: flex;
     flex-direction: column;
     gap: 0.45rem;
@@ -1023,9 +1071,9 @@ body {
 }
 
 .impact-warning-box {
-    background-color: #fffbeb;
-    border: 1px solid #fcd34d;
-    color: #92400e;
+    background-color: var(--color-warning-bg);
+    border: 1px solid var(--color-warning-border);
+    color: var(--color-warning);
     padding: 0.65rem 0.85rem;
     border-radius: var(--radius-md);
     font-size: 0.8rem;
@@ -1057,62 +1105,62 @@ body {
 
 .badge-warning {
     background-color: var(--color-warning-bg);
-    color: #b45309;
+    color: var(--color-warning);
     border: 1px solid var(--color-warning-border);
 }
 
 .badge-safe {
     background-color: var(--color-safe-bg);
-    color: #15803d;
+    color: var(--color-safe);
     border: 1px solid var(--color-safe-border);
 }
 
 .badge-outdated {
     background-color: var(--color-outdated-bg);
-    color: #7e22ce;
+    color: var(--color-outdated);
     border: 1px solid var(--color-outdated-border);
 }
 
 .badge-expired {
-    background-color: #fee2e2;
-    color: #991b1b;
-    border: 1px solid #f87171;
+    background-color: var(--color-critical-bg);
+    color: var(--color-critical);
+    border: 1px solid var(--color-critical-border);
 }
 
 .badge-near-expiry {
-    background-color: #fef3c7;
-    color: #92400e;
-    border: 1px solid #f59e0b;
+    background-color: var(--color-warning-bg);
+    color: var(--color-warning);
+    border: 1px solid var(--color-warning-border);
 }
 
 .badge-pending {
-    background-color: #fef3c7;
-    color: #92400e;
-    border: 1px solid #f59e0b;
+    background-color: var(--color-warning-bg);
+    color: var(--color-warning);
+    border: 1px solid var(--color-warning-border);
 }
 
 .badge-approved {
-    background-color: #d1fae5;
-    color: #065f46;
-    border: 1px solid #6ee7b7;
+    background-color: var(--color-safe-bg);
+    color: var(--color-safe);
+    border: 1px solid var(--color-safe-border);
 }
 
 .badge-rejected {
-    background-color: #fee2e2;
-    color: #991b1b;
-    border: 1px solid #f87171;
+    background-color: var(--color-critical-bg);
+    color: var(--color-critical);
+    border: 1px solid var(--color-critical-border);
 }
 
 tr.row-critical {
-    background-color: rgba(254, 242, 242, 0.4);
+    background-color: var(--color-critical-bg);
 }
 
 tr.row-outdated {
-    background-color: rgba(250, 245, 255, 0.4);
+    background-color: var(--color-outdated-bg);
 }
 
 tr.row-expired {
-    background-color: rgba(254, 226, 226, 0.4);
+    background-color: var(--color-critical-bg);
 }
 
 /* Distance Matrix Table */
@@ -1123,8 +1171,8 @@ tr.row-expired {
 }
 
 #distance-matrix-table td.matrix-self {
-    background-color: #f1f5f9;
-    color: #94a3b8;
+    background-color: var(--color-surface-alt);
+    color: var(--color-text-muted);
     font-weight: bold;
 }
 
@@ -1172,7 +1220,7 @@ tr.row-expired {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 0.5rem;
-    background-color: #f8fafc;
+    background-color: var(--color-surface-alt);
     padding: 0.65rem;
     border-radius: var(--radius-sm);
     font-size: 0.8rem;
@@ -1222,7 +1270,7 @@ tr.row-expired {
 }
 
 .sim-card {
-    background-color: #f8fafc;
+    background-color: var(--color-surface-alt);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-sm);
     padding: 0.85rem;
@@ -1291,8 +1339,9 @@ tr.row-expired {
 }
 
 .toast {
-    background-color: #111827;
-    color: #fff;
+    background-color: var(--color-surface);
+    color: var(--color-text-main);
+    border: 1px solid var(--color-border);
     padding: 0.75rem 1.1rem;
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-modal);
@@ -1319,7 +1368,7 @@ tr.row-expired {
 }
 
 .toast-info {
-    border-left: 4px solid #0284c7;
+    border-left: 4px solid var(--color-accent);
 }
 
 @keyframes toastSlide {
@@ -1341,8 +1390,8 @@ tr.row-expired {
     left: 0;
     width: 100vw;
     height: 100vh;
-    background-color: rgba(17, 24, 39, 0.6);
-    backdrop-filter: blur(2px);
+    background-color: rgba(11, 19, 32, 0.75);
+    backdrop-filter: blur(3px);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1486,18 +1535,18 @@ textarea::placeholder {
 
 /* Footer */
 .app-footer {
-    background-color: #111827;
-    color: #9ca3af;
+    background-color: var(--color-surface-alt);
+    color: var(--color-text-muted);
     text-align: center;
     padding: 1.25rem;
     font-size: 0.8rem;
     margin-top: auto;
-    border-top: 1px solid #1f2937;
+    border-top: 1px solid var(--color-border);
 }
 
 .footer-sub {
     font-size: 0.725rem;
-    color: #6b7280;
+    color: var(--color-text-muted);
     margin-top: 0.2rem;
 }
 

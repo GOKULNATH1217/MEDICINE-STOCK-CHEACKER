@@ -1134,10 +1134,10 @@ function handleBarcodeDetected(rawValue) {
         const item = barcodeCatalogue[barcode];
         if (resultBox) {
             resultBox.innerHTML = `
-                <div style="background:#f0fdf4; border:2px solid #86efac; padding:0.75rem; border-radius:6px;">
-                    <i class="fa-solid fa-circle-check" style="color:#16a34a; font-size:1.1rem;"></i> <strong>Barcode Verified Match:</strong><br>
+                <div style="background:var(--color-safe-bg); border:2px solid var(--color-safe-border); padding:0.75rem; border-radius:6px; color:var(--color-text-main);">
+                    <i class="fa-solid fa-circle-check" style="color:var(--color-safe); font-size:1.1rem;"></i> <strong>Barcode Verified Match:</strong><br>
                     <strong>${esc(item.medicineName)}</strong> (GTIN: <code>${esc(barcode)}</code>)<br>
-                    <small>Unit: ${esc(item.unit)} | Standard Usage: ${item.defaultDailyUse}/day</small><br>
+                    <small style="color:var(--color-text-muted);">Unit: ${esc(item.unit)} | Standard Usage: ${item.defaultDailyUse}/day</small><br>
                     <div style="margin-top:0.5rem; display:flex; gap:0.5rem;">
                         <button type="button" class="btn btn-success btn-sm" id="btn-apply-barcode-med">
                             <i class="fa-solid fa-check"></i> Use Verified Medicine in Wizard
@@ -1160,7 +1160,7 @@ function handleBarcodeDetected(rawValue) {
     } else {
         if (resultBox) {
             resultBox.innerHTML = `
-                <div style="background:#fef2f2; border:2px solid #fca5a5; padding:0.75rem; border-radius:6px; color:#991b1b;">
+                <div style="background:var(--color-critical-bg); border:2px solid var(--color-critical-border); padding:0.75rem; border-radius:6px; color:var(--color-critical);">
                     <i class="fa-solid fa-triangle-exclamation"></i> <strong>Unknown Barcode (${esc(barcode)})</strong><br>
                     This code is not registered in the local catalogue. Please select or register medicine manually.
                 </div>
@@ -1348,26 +1348,26 @@ function renderSimulator(processedInventory) {
             <td><strong>${esc(item.centreId)}</strong></td>
             <td><strong>${esc(item.medicineName)}</strong></td>
             <td>${baseDaysText}</td>
-            <td><strong style="color: ${simDaysLeft <= effectiveLeadTime ? '#dc2626' : '#111827'};">${simDaysText}</strong></td>
+            <td><strong style="color: ${simDaysLeft <= effectiveLeadTime ? 'var(--color-critical)' : 'var(--color-text-main)'};">${simDaysText}</strong></td>
             <td>${esc(simStockoutDate)}</td>
             <td><span class="badge ${item.status === 'CRITICAL' ? 'badge-critical' : (item.status === 'WARNING' ? 'badge-warning' : (item.status === 'OUTDATED' ? 'badge-outdated' : 'badge-safe'))}">${esc(item.status)}</span></td>
             <td><span class="badge ${simStatus === 'CRITICAL' ? 'badge-critical' : (simStatus === 'WARNING' ? 'badge-warning' : (simStatus === 'OUTDATED' ? 'badge-outdated' : 'badge-safe'))}">${esc(simStatus)}</span></td>
-            <td>${simShortfall > 0 ? `<strong style="color:#dc2626;">${simShortfall} units</strong>` : '0'}</td>
+            <td>${simShortfall > 0 ? `<strong style="color:var(--color-critical);">${simShortfall} units</strong>` : '0'}</td>
         `;
         tbody.appendChild(tr);
     });
 
     if (demandMult > 1.0 || delayDays > 0 || shockPercent > 0 || assumeTransfers) {
         banner.className = 'sim-status-banner';
-        banner.style.backgroundColor = simCriticalCount > 0 ? '#fef2f2' : '#f0fdf4';
-        banner.style.borderColor = simCriticalCount > 0 ? '#fca5a5' : '#86efac';
-        banner.style.color = simCriticalCount > 0 ? '#dc2626' : '#166534';
+        banner.style.backgroundColor = simCriticalCount > 0 ? 'var(--color-critical-bg)' : 'var(--color-safe-bg)';
+        banner.style.borderColor = simCriticalCount > 0 ? 'var(--color-critical-border)' : 'var(--color-safe-border)';
+        banner.style.color = simCriticalCount > 0 ? 'var(--color-critical)' : 'var(--color-safe)';
         banner.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> <strong>Simulation Active:</strong> ${simCriticalCount} critical shortages projected (${assumeTransfers ? 'Transfers assumed pre-executed; ' : ''}+${simTotalReq} units district requirement under stress conditions).`;
     } else {
         banner.className = 'sim-status-banner';
-        banner.style.backgroundColor = '#eff6ff';
-        banner.style.borderColor = '#bfdbfe';
-        banner.style.color = '#1e40af';
+        banner.style.backgroundColor = 'var(--color-recipient-bg)';
+        banner.style.borderColor = 'var(--color-recipient-border)';
+        banner.style.color = 'var(--color-recipient-text)';
         banner.innerHTML = `<i class="fa-solid fa-circle-check"></i> Baseline mode active. Adjust sliders or toggle transfer assumption above to stress test supply network.`;
     }
 }
@@ -1378,7 +1378,7 @@ function renderBatchTable() {
     tbody.innerHTML = '';
 
     if (batchState.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: #6b7280; padding: 2rem;">No registered medicine batches found.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--color-text-muted); padding: 2rem;">No registered medicine batches found.</td></tr>`;
         return;
     }
 
@@ -1404,7 +1404,7 @@ function renderBatchTable() {
             <td><strong>${esc(b.medicineName)}</strong></td>
             <td><strong>${b.quantity} units</strong></td>
             <td>${esc(formatDate(b.expiryDate))}</td>
-            <td>${daysLeft < 0 ? `<span style="color:#dc2626; font-weight:bold;">${daysLeft} days</span>` : `${daysLeft} days`}</td>
+            <td>${daysLeft < 0 ? `<span style="color:var(--color-critical); font-weight:bold;">${daysLeft} days</span>` : `${daysLeft} days`}</td>
             <td><span class="badge ${badgeClass}">${esc(statusLabel)}</span></td>
             <td>
                 <button class="btn btn-danger btn-sm btn-delete-batch" data-id="${esc(b.id)}">
@@ -1442,7 +1442,7 @@ function renderPendingApprovalsAndAudit() {
     if (pendingTbody) {
         pendingTbody.innerHTML = '';
         if (pendingList.length === 0) {
-            pendingTbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: #16a34a; padding: 2rem;"><i class="fa-solid fa-circle-check"></i> No pending transfer requests requiring Medical Officer approval.</td></tr>`;
+            pendingTbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--color-safe); padding: 2rem;"><i class="fa-solid fa-circle-check"></i> No pending transfer requests requiring Medical Officer approval.</td></tr>`;
         } else {
             pendingList.forEach(req => {
                 const tr = document.createElement('tr');
@@ -1456,7 +1456,7 @@ function renderPendingApprovalsAndAudit() {
                         </div>
                     </td>
                     <td><strong>${esc(req.medicine)}</strong></td>
-                    <td><strong style="color:#0284c7; font-size: 0.95rem;">${req.qty} units</strong></td>
+                    <td><strong style="color:var(--color-accent); font-size: 0.95rem;">${req.qty} units</strong></td>
                     <td>${impactCompactHtml(req.impact)}</td>
                     <td><span class="badge badge-pending">Pending Approval</span></td>
                     <td>
@@ -1494,7 +1494,7 @@ function renderPendingApprovalsAndAudit() {
     if (auditTbody) {
         auditTbody.innerHTML = '';
         if (auditLogState.length === 0) {
-            auditTbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: #6b7280; padding: 2rem;">No audit log records recorded yet.</td></tr>`;
+            auditTbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--color-text-muted); padding: 2rem;">No audit log records recorded yet.</td></tr>`;
         } else {
             auditLogState.forEach(log => {
                 let actionBadge = 'badge-safe';
@@ -1510,7 +1510,7 @@ function renderPendingApprovalsAndAudit() {
                     <td><strong>${esc(log.route)}</strong></td>
                     <td><strong>${esc(log.medicine)}</strong></td>
                     <td>${log.qty} units</td>
-                    <td><small style="color:#4b5563;">${esc(log.note)}</small></td>
+                    <td><small style="color:var(--color-text-muted);">${esc(log.note)}</small></td>
                 `;
                 auditTbody.appendChild(tr);
             });
@@ -1572,7 +1572,7 @@ function renderDashboard() {
     document.getElementById('needs-attention-count').textContent = `Showing ${filteredList.length} items (${needsAttentionItems.length} need action)`;
 
     if (filteredList.length === 0) {
-        tbodyOverview.innerHTML = `<tr><td colspan="9" style="text-align: center; color: #16a34a; padding: 2rem;"><i class="fa-solid fa-circle-check"></i> No matching medicine stock records found.</td></tr>`;
+        tbodyOverview.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--color-safe); padding: 2rem;"><i class="fa-solid fa-circle-check"></i> No matching medicine stock records found.</td></tr>`;
     } else {
         filteredList.forEach(item => {
             const tr = document.createElement('tr');
@@ -1584,13 +1584,13 @@ function renderDashboard() {
 
             tr.innerHTML = `
                 <td><span class="badge ${badgeClass}">${esc(item.status)}</span></td>
-                <td><strong>${esc(item.centreId)}</strong> <br><small style="color:#6b7280;">${esc(centreNames[item.centreId] || '')}</small></td>
+                <td><strong>${esc(item.centreId)}</strong> <br><small style="color:var(--color-text-muted);">${esc(centreNames[item.centreId] || '')}</small></td>
                 <td><strong>${esc(item.medicineName)}</strong></td>
                 <td><strong>${item.usableStock}</strong></td>
                 <td>${item.dailyConsumption} / day</td>
                 <td><strong>${item.daysRemaining === Infinity ? 'Infinite' : item.daysRemaining.toFixed(1) + 'd'}</strong></td>
                 <td>${esc(item.stockoutDate)}</td>
-                <td><small style="color:#4b5563;">${esc(item.riskReason)}</small></td>
+                <td><small style="color:var(--color-text-muted);">${esc(item.riskReason)}</small></td>
                 <td>
                     <button class="btn btn-outline btn-sm btn-speak-row" data-text="${esc(item.riskReason)}">
                         <i class="fa-solid fa-volume-high"></i> ${esc(actionText)}
@@ -1614,7 +1614,7 @@ function renderDashboard() {
     document.getElementById('inventory-count').textContent = `Showing ${filteredList.length} of ${processedList.length} items`;
 
     if (filteredList.length === 0) {
-        tbodyInv.innerHTML = `<tr><td colspan="10" style="text-align: center; color: #6b7280; padding: 2rem;">No matching medicine stock records found.</td></tr>`;
+        tbodyInv.innerHTML = `<tr><td colspan="10" style="text-align: center; color: var(--color-text-muted); padding: 2rem;">No matching medicine stock records found.</td></tr>`;
     } else {
         filteredList.forEach(item => {
             const tr = document.createElement('tr');
@@ -1625,17 +1625,17 @@ function renderDashboard() {
             let badgeClass = item.status === 'CRITICAL' ? 'badge-critical' : (item.status === 'WARNING' ? 'badge-warning' : (item.status === 'OUTDATED' ? 'badge-outdated' : 'badge-safe'));
 
             tr.innerHTML = `
-                <td><strong>${esc(item.centreId)}</strong> <br><small style="color:#6b7280;">${esc(centreNames[item.centreId] || '')}</small></td>
+                <td><strong>${esc(item.centreId)}</strong> <br><small style="color:var(--color-text-muted);">${esc(centreNames[item.centreId] || '')}</small></td>
                 <td><strong>${esc(item.medicineName)}</strong></td>
-                <td><strong>${item.usableStock}</strong> <br><small style="color:#6b7280;">(${item.currentStock} total)</small></td>
+                <td><strong>${item.usableStock}</strong> <br><small style="color:var(--color-text-muted);">(${item.currentStock} total)</small></td>
                 <td>${item.dailyConsumption} / day</td>
                 <td><strong>${daysText}</strong></td>
                 <td>${esc(item.stockoutDate)}</td>
                 <td>${item.targetCoverageDays}d (${item.targetStock} units)</td>
-                <td>${item.shortfall > 0 ? `<span style="color:#dc2626; font-weight:bold;">${item.shortfall} units</span>` : '<span style="color:#16a34a;">None</span>'}</td>
+                <td>${item.shortfall > 0 ? `<span style="color:var(--color-critical); font-weight:bold;">${item.shortfall} units</span>` : '<span style="color:var(--color-safe);">None</span>'}</td>
                 <td>
                     <span class="badge ${badgeClass}">${esc(item.status)}</span>
-                    <br><small style="color:#6b7280; font-size: 0.725rem;">${esc(item.riskReason)}</small>
+                    <br><small style="color:var(--color-text-muted); font-size: 0.725rem;">${esc(item.riskReason)}</small>
                 </td>
                 <td>
                     <button class="btn btn-outline btn-sm btn-delete-item" data-id="${esc(item.id)}">
@@ -1664,7 +1664,7 @@ function renderDashboard() {
     tbodyTrans.innerHTML = '';
 
     if (suggestedTransfers.length === 0) {
-        tbodyTrans.innerHTML = `<tr><td colspan="8" style="text-align: center; color: #6b7280; padding: 2rem;">No surplus transfers required currently. All health centres operate within safe stock levels!</td></tr>`;
+        tbodyTrans.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--color-text-muted); padding: 2rem;">No surplus transfers required currently. All health centres operate within safe stock levels!</td></tr>`;
     } else {
         suggestedTransfers.forEach((t, idx) => {
             const tr = document.createElement('tr');
@@ -1690,9 +1690,9 @@ function renderDashboard() {
                 </td>
                 <td><strong>${esc(t.medicineName)}</strong></td>
                 <td>${t.distanceKm} km</td>
-                <td><strong style="color:#0284c7; font-size: 0.95rem;">${t.transferQty} units</strong></td>
+                <td><strong style="color:var(--color-accent); font-size: 0.95rem;">${t.transferQty} units</strong></td>
                 <td>${impactCompactHtml(impactObj)}</td>
-                <td><small style="color:#4b5563;">${esc(t.reasoning)}</small></td>
+                <td><small style="color:var(--color-text-muted);">${esc(t.reasoning)}</small></td>
                 <td>
                     ${isPending ? `
                         <button class="btn btn-outline btn-sm" disabled style="opacity:0.7; cursor:not-allowed;">
@@ -1726,7 +1726,7 @@ function renderDashboard() {
     tbodyDist.innerHTML = '';
 
     if (districtRequirements.length === 0) {
-        tbodyDist.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #16a34a; padding: 2rem;"><i class="fa-solid fa-circle-check"></i> No additional district procurement required. All shortfalls covered by safe PHC transfers!</td></tr>`;
+        tbodyDist.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--color-safe); padding: 2rem;"><i class="fa-solid fa-circle-check"></i> No additional district procurement required. All shortfalls covered by safe PHC transfers!</td></tr>`;
     } else {
         districtRequirements.forEach(d => {
             const tr = document.createElement('tr');
@@ -1737,10 +1737,10 @@ function renderDashboard() {
                 <td><strong>${esc(d.medicineName)}</strong></td>
                 <td>${d.totalShortfall} units</td>
                 <td>${d.coveredBySurplus} units</td>
-                <td><strong style="color:#dc2626; font-size: 1rem;">${d.remainingDistrictReq} units</strong></td>
+                <td><strong style="color:var(--color-critical); font-size: 1rem;">${d.remainingDistrictReq} units</strong></td>
                 <td>
                     <span class="badge ${badgeClass}">${esc(d.status)}</span>
-                    ${d.isOutdated ? '<br><small style="color:#7e22ce;">(Manual Audit Needed)</small>' : ''}
+                    ${d.isOutdated ? '<br><small style="color:var(--color-outdated);">(Manual Audit Needed)</small>' : ''}
                 </td>
             `;
             tbodyDist.appendChild(tr);
@@ -1888,8 +1888,8 @@ function openRequestTransferModal(donor, recipient, medicine, qty) {
     const impact = computeTransferImpact(donor, recipient, medicine, qty);
 
     document.getElementById('req-transfer-summary').innerHTML = `
-        <div style="font-size:0.9rem; font-weight:700; margin-bottom:0.5rem; color:#111827;">
-            Requesting Transfer of <span style="color:#0284c7;">${qty} units</span> of <strong>${esc(medicine)}</strong> from <strong>${esc(donor)}</strong> to <strong>${esc(recipient)}</strong>
+        <div style="font-size:0.9rem; font-weight:700; margin-bottom:0.5rem; color:var(--color-text-main);">
+            Requesting Transfer of <span style="color:var(--color-accent);">${qty} units</span> of <strong>${esc(medicine)}</strong> from <strong>${esc(donor)}</strong> to <strong>${esc(recipient)}</strong>
         </div>
         ${impactHtml(impact)}
     `;
@@ -2114,12 +2114,41 @@ function closeConfirmModal() {
  * Tab Navigation
  */
 function switchTab(tabId) {
-    document.querySelectorAll('.nav-tab').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.tab === tabId);
-    });
-    document.querySelectorAll('.tab-content').forEach(content => {
-        content.classList.toggle('active', content.id === tabId);
-    });
+    if (!tabId || typeof document === 'undefined') return;
+
+    // 1. Update navigation tab button active state
+    if (document.querySelectorAll) {
+        document.querySelectorAll('.nav-tab').forEach(btn => {
+            const isActive = btn.dataset.tab === tabId;
+            btn.classList.toggle('active', isActive);
+            btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+        });
+    }
+
+    // 2. Control display of top sections (KPI summary & Filters)
+    const kpiSummary = document.getElementById ? document.getElementById('kpi-summary') : null;
+    if (kpiSummary) {
+        kpiSummary.style.display = (tabId === 'tab-overview') ? 'grid' : 'none';
+    }
+
+    const filterToolbar = document.querySelector ? document.querySelector('.filter-toolbar') : null;
+    if (filterToolbar) {
+        filterToolbar.style.display = (tabId === 'tab-overview' || tabId === 'tab-inventory') ? 'flex' : 'none';
+    }
+
+    // 3. Toggle active tab content section
+    if (document.querySelectorAll) {
+        document.querySelectorAll('.tab-content').forEach(content => {
+            const isActive = content.id === tabId;
+            content.classList.toggle('active', isActive);
+        });
+    }
+
+    // 4. Smoothly bring selected section to top of content view
+    const mainContainer = document.querySelector ? document.querySelector('.dashboard-container') : null;
+    if (mainContainer && typeof mainContainer.scrollIntoView === 'function') {
+        mainContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
 }
 
 /**
@@ -2405,10 +2434,10 @@ document.addEventListener('DOMContentLoaded', () => {
             let statusText = daysLeft < 0 ? `EXPIRED ${Math.abs(daysLeft)} days ago (EXCLUDED)` : (daysLeft <= 60 ? `Expires in ${daysLeft} days (Use First)` : `USABLE (${daysLeft} days left)`);
 
             html += `
-                <div style="background:#f8fafc; padding:0.75rem; border:1px solid #cbd5e1; border-radius:6px; display:flex; justify-content:space-between; align-items:center;">
+                <div style="background:var(--color-surface-alt); padding:0.75rem; border:1px solid var(--color-border); border-radius:6px; display:flex; justify-content:space-between; align-items:center;">
                     <div>
                         <strong>${esc(b.medicineName)}</strong> - <code>${esc(b.batchNumber)}</code> (${esc(b.centreId)})<br>
-                        <small style="color:#6b7280;">Qty: ${b.quantity} units | Expiry: ${esc(formatDate(b.expiryDate))}</small>
+                        <small style="color:var(--color-text-muted);">Qty: ${b.quantity} units | Expiry: ${esc(formatDate(b.expiryDate))}</small>
                     </div>
                     <span class="badge ${badgeClass}">${statusText}</span>
                 </div>
@@ -2430,14 +2459,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let html = '<div style="display:flex; flex-direction:column; gap:0.65rem;">';
         if (criticals.length === 0) {
-            html += '<p style="color:#16a34a; font-weight:700;"><i class="fa-solid fa-circle-check"></i> All medicine stock levels operate safely!</p>';
+            html += '<p style="color:var(--color-safe); font-weight:700;"><i class="fa-solid fa-circle-check"></i> All medicine stock levels operate safely!</p>';
         } else {
             criticals.forEach(i => {
                 html += `
-                    <div style="background:#fef2f2; border:1px solid #fca5a5; padding:0.85rem; border-radius:6px; display:flex; justify-content:space-between; align-items:center;">
+                    <div style="background:var(--color-critical-bg); border:1px solid var(--color-critical-border); padding:0.85rem; border-radius:6px; display:flex; justify-content:space-between; align-items:center;">
                         <div>
-                            <strong style="color:#dc2626;">${esc(i.centreId)} — ${esc(i.medicineName)}</strong><br>
-                            <span>${esc(i.riskReason)}</span>
+                            <strong style="color:var(--color-critical);">${esc(i.centreId)} — ${esc(i.medicineName)}</strong><br>
+                            <span style="color:var(--color-text-main);">${esc(i.riskReason)}</span>
                         </div>
                         <button class="btn btn-outline btn-sm btn-speak-alert" data-text="${esc(i.riskReason)}">
                             <i class="fa-solid fa-volume-high"></i> Listen (கேளுங்கள்)
@@ -2624,6 +2653,12 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.nav-tab').forEach(btn => {
         btn.addEventListener('click', () => switchTab(btn.dataset.tab));
     });
+
+    const brandTitle = document.querySelector('.brand-title');
+    if (brandTitle) {
+        brandTitle.style.cursor = 'pointer';
+        brandTitle.addEventListener('click', () => switchTab('tab-overview'));
+    }
 
     // Request Transfer Modal Listeners
     document.getElementById('btn-close-req-modal').addEventListener('click', closeRequestTransferModal);
