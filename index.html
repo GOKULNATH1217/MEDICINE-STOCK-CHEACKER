@@ -4,28 +4,78 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description"
-        content="MEDI-CARE — Primary Health Centre Medicine Stock-Out Early Warning & Safe Redistribution System">
+    <meta name="description" content="MEDI-CARE — Primary Health Centre Medicine Stock-Out Early Warning & Safe Redistribution System">
+    <meta name="theme-color" content="#0f766e">
     <title>MEDI-CARE — PHC Medicine Stock-Out Early Warning & Safe Redistribution</title>
-    <!-- Google Fonts: Plus Jakarta Sans for clean typography -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
-        rel="stylesheet">
-    <!-- FontAwesome Icons -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="manifest" href="manifest.webmanifest">
     <link rel="stylesheet" href="style.css">
-    <!-- ZXing Barcode Scanning Library Fallback -->
-    <script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
 </head>
 
 <body>
-    <!-- Product Header Bar -->
+    <!-- Inline SVG Icon Sprite (Offline-first, 0 network requests) -->
+    <svg class="svg-sprite" style="display:none;" aria-hidden="true">
+        <symbol id="icon-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line>
+        </symbol>
+        <symbol id="icon-wifi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 12.55a11 11 0 0 1 14.08 0"></path><path d="M1.42 9a16 16 0 0 1 21.16 0"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><line x1="12" y1="20" x2="12.01" y2="20"></line>
+        </symbol>
+        <symbol id="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+        </symbol>
+        <symbol id="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+        </symbol>
+        <symbol id="icon-gear" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </symbol>
+        <symbol id="icon-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+        </symbol>
+        <symbol id="icon-dashboard" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect>
+        </symbol>
+        <symbol id="icon-transfer" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 1l4 4-4 4"></path><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><path d="M7 23l-4-4 4-4"></path><path d="M21 13v2a4 4 0 0 1-4 4H3"></path>
+        </symbol>
+        <symbol id="icon-check-circle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline>
+        </symbol>
+        <symbol id="icon-boxes" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line>
+        </symbol>
+        <symbol id="icon-layer" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline>
+        </symbol>
+        <symbol id="icon-network" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="2" width="6" height="6" rx="1"></rect><rect x="16" y="2" width="6" height="6" rx="1"></rect><rect x="9" y="16" width="6" height="6" rx="1"></rect><path d="M5 8v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8"></path><line x1="12" y1="13" x2="12" y2="16"></line>
+        </symbol>
+        <symbol id="icon-chart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line>
+        </symbol>
+        <symbol id="icon-mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line>
+        </symbol>
+        <symbol id="icon-wand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M15 4l-2 2 4 4 2-2-4-4z"></path><path d="M8 11l-5 5 4 4 5-5"></path>
+        </symbol>
+        <symbol id="icon-barcode" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 5v14M7 5v14M11 5v14M15 5v14M19 5v14M21 5v14"></path>
+        </symbol>
+        <symbol id="icon-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line>
+        </symbol>
+        <symbol id="icon-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>
+        </symbol>
+    </svg>
+
+    <!-- Header Bar -->
     <header class="app-header">
         <div class="header-container">
             <div class="brand-title">
                 <div class="logo-mark">
-                    <i class="fa-solid fa-square-plus"></i>
+                    <svg class="icon icon-lg"><use href="#icon-plus"></use></svg>
                 </div>
                 <div>
                     <h1 data-i18n="app_title">MEDI-CARE</h1>
@@ -34,39 +84,33 @@
             </div>
 
             <div class="header-actions">
-                <!-- Network Sync Status Pill -->
-                <span id="status-offline" class="network-pill online" title="Connectivity and sync queue status">
-                    <i class="fa-solid fa-wifi"></i> <span id="lbl-network" data-i18n="network_online">Online (Synced)</span>
+                <span id="status-offline" class="network-pill online" title="Network status & sync outbox queue">
+                    <svg class="icon"><use href="#icon-wifi"></use></svg> <span id="lbl-network" data-i18n="network_online">Online (Synced)</span>
                 </span>
 
-                <!-- Entire Website Language Selector (English / Tamil) -->
-                <select id="select-site-lang" class="btn btn-outline" style="padding: 0.35rem 0.5rem; font-size: 0.85rem;" title="Select Website Language (இணைதள மொழி)">
-                    <option value="en">🌐 English</option>
-                    <option value="ta">🌐 தமிழ் (Tamil)</option>
+                <select id="select-site-lang" class="btn btn-outline select-compact" title="Select Language">
+                    <option value="en">English</option>
+                    <option value="ta">தமிழ்</option>
                 </select>
 
-                <!-- Light / Dark Theme Selector -->
                 <button id="btn-toggle-theme" class="btn btn-outline" title="Toggle Light/Dark Theme">
-                    <i class="fa-solid fa-moon"></i> <span id="lbl-theme" data-i18n="theme_dark">Dark Mode</span>
+                    <svg class="icon"><use href="#icon-moon"></use></svg> <span id="lbl-theme" data-i18n="theme_dark">Dark Mode</span>
                 </button>
 
-                <!-- Simple / Guided Mode Toggle -->
-                <button id="btn-toggle-mode" class="btn btn-simple-toggle" title="Switch to beginner-friendly guided mode">
-                    <i class="fa-solid fa-wand-magic-sparkles"></i> <span id="lbl-mode" data-i18n="simple_mode_off">Guided Simple Mode</span>
+                <button id="btn-toggle-mode" class="btn btn-simple-toggle" title="Switch guided simple mode">
+                    <svg class="icon"><use href="#icon-wand"></use></svg> <span id="lbl-mode" data-i18n="simple_mode_off">Guided Simple Mode</span>
                 </button>
 
-                <!-- Settings & Dev Tools Button -->
-                <button id="btn-open-settings" class="btn btn-outline" title="System Settings & Demo Scenarios">
-                    <i class="fa-solid fa-gear"></i> <span id="lbl-settings" data-i18n="settings">Settings</span>
+                <button id="btn-open-settings" class="btn btn-outline" title="System Settings">
+                    <svg class="icon"><use href="#icon-gear"></use></svg> <span id="lbl-settings" data-i18n="settings">Settings</span>
                 </button>
 
-                <!-- Hidden legacy reset/demo buttons for compatibility with existing tests -->
-                <button id="btn-demo" class="btn btn-demo" style="display:none;"></button>
-                <button id="btn-reset" class="btn btn-outline" style="display:none;"></button>
+                <!-- Hidden legacy test compatibility buttons -->
+                <button id="btn-demo" class="btn-hidden"></button>
+                <button id="btn-reset" class="btn-hidden"></button>
 
-                <!-- Primary Add Stock Button -->
                 <button id="btn-add-modal" class="btn btn-primary">
-                    <i class="fa-solid fa-plus"></i> <span id="lbl-add-stock-btn" data-i18n="add_update_stock">Add / Update Stock</span>
+                    <svg class="icon"><use href="#icon-plus"></use></svg> <span id="lbl-add-stock-btn" data-i18n="add_update_stock">Add / Update Stock</span>
                 </button>
             </div>
         </div>
@@ -74,965 +118,471 @@
 
     <!-- Operational Policy Banner -->
     <div class="notice-banner">
-        <i class="fa-solid fa-shield-halved"></i>
-        <span id="lbl-policy-notice" data-i18n="policy_notice"><strong>Operational Policy:</strong> Inter-PHC stock redistribution requires Medical Officer PIN verification. Count days before ordering district stock.</span>
+        <svg class="icon"><use href="#icon-shield"></use></svg>
+        <span id="lbl-policy-notice" data-i18n="policy_notice">Operational Policy: Inter-PHC stock redistribution requires Medical Officer PIN verification. Count days before ordering district stock.</span>
     </div>
 
-    <!-- Main Container -->
-    <main class="dashboard-container">
-
-        <!-- Navigation Bar (Section Navigation Header) -->
-        <nav class="nav-bar">
+    <!-- Navigation Tabs Bar -->
+    <nav class="nav-bar">
+        <div class="nav-container">
             <button class="nav-tab active" data-tab="tab-overview">
-                <i class="fa-solid fa-triangle-exclamation"></i> 1. Shortage Overview & Needs Attention
+                <svg class="icon"><use href="#icon-dashboard"></use></svg> <span data-i18n="tab_overview">Overview</span>
             </button>
-            <button class="nav-tab" data-tab="tab-redistribution">
-                <i class="fa-solid fa-route"></i> 2. Inter-PHC Redistribution & Route Transfers
+            <button class="nav-tab" data-tab="tab-transfers">
+                <svg class="icon"><use href="#icon-transfer"></use></svg> <span data-i18n="tab_transfers">Transfers</span>
             </button>
             <button class="nav-tab" data-tab="tab-approvals">
-                <i class="fa-solid fa-user-check"></i> Pending Approvals & Audit Log
-                <span id="pending-nav-badge" class="nav-badge" style="display:none">0</span>
+                <svg class="icon"><use href="#icon-check-circle"></use></svg> <span data-i18n="tab_approvals">Approvals</span> <span id="nav-badge-approvals" class="nav-badge">0</span>
             </button>
             <button class="nav-tab" data-tab="tab-inventory">
-                <i class="fa-solid fa-table-list"></i> Full Inventory Forecasts
+                <svg class="icon"><use href="#icon-boxes"></use></svg> <span data-i18n="tab_inventory">Inventory</span>
             </button>
-            <button class="nav-tab" data-tab="tab-batch">
-                <i class="fa-solid fa-boxes-stacked"></i> Batches & Expiry Tracking
+            <button class="nav-tab" data-tab="tab-batches">
+                <svg class="icon"><use href="#icon-layer"></use></svg> <span data-i18n="tab_batches">Batches</span>
             </button>
             <button class="nav-tab" data-tab="tab-network">
-                <i class="fa-solid fa-chart-pie"></i> Facility Risk & Network Matrix
+                <svg class="icon"><use href="#icon-network"></use></svg> <span data-i18n="tab_network">Network</span>
             </button>
-            <button class="nav-tab" data-tab="tab-simulation">
-                <i class="fa-solid fa-sliders"></i> What-If Supply Simulator
+            <button class="nav-tab" data-tab="tab-simulator">
+                <svg class="icon"><use href="#icon-chart"></use></svg> <span data-i18n="tab_simulator">Simulator</span>
             </button>
             <button class="nav-tab" data-tab="tab-voice">
-                <i class="fa-solid fa-microphone"></i> Voice Assistance (குரல் உதவி)
+                <svg class="icon"><use href="#icon-mic"></use></svg> <span data-i18n="tab_voice">Voice</span>
             </button>
-        </nav>
+        </div>
+    </nav>
 
-        <!-- TAB VOICE: UNIFIED SINGLE VOICE ASSISTANCE CARD -->
-        <section id="tab-voice" class="tab-content">
-            <section id="voice-assistant-card" class="panel voice-card-unified">
-                <div class="panel-header" style="padding-bottom: 0.5rem; margin-bottom: 0.75rem;">
-                    <div style="display: flex; align-items: center; gap: 0.65rem;">
-                        <div class="logo-mark" style="width: 34px; height: 34px; font-size: 1.1rem; background-color: var(--color-primary);">
-                            <i class="fa-solid fa-microphone"></i>
-                        </div>
-                        <div>
-                            <h3 style="margin: 0; font-size: 1.15rem; color: var(--color-text-main); font-weight: 800;">
-                                Voice Assistance / குரல் உதவி
-                            </h3>
-                            <p class="panel-desc" style="margin: 0; font-size: 0.75rem;" data-i18n="voice_help_text">Speak medicine names or quantities in Tamil or English to fill stock entries hands-free with mandatory confirmation.</p>
-                        </div>
-                    </div>
-                    <!-- 5. Voice Status Badge -->
-                    <span id="voice-status-indicator" class="badge badge-pending">Ready / தயார்</span>
-                </div>
+    <!-- Main Content Container -->
+    <main class="dashboard-container">
+        <!-- Guided Simple Operating Mode Panel -->
+        <div id="simple-mode-view" class="simple-mode-container" style="display: none;"></div>
 
-                <div class="voice-card-body" style="padding: 0 1.25rem 1.25rem 1.25rem;">
-                    <div class="voice-card-controls-row" style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
-                        <!-- 1. Voice Assistance Toggle -->
-                        <button type="button" id="btn-toggle-voice" class="btn btn-outline" title="Enable/Disable Voice Assistant">
-                            <i class="fa-solid fa-volume-high"></i> <span id="lbl-voice" data-i18n="voice_off">Voice: OFF</span>
-                        </button>
-
-                        <!-- 2. Voice Language Selector -->
-                        <div class="filter-field" style="margin: 0;">
-                            <label for="select-voice-lang" style="font-size: 0.8rem; margin: 0; color: var(--color-text-muted);">Voice Language:</label>
-                            <select id="select-voice-lang" class="input-select" style="padding: 0.35rem 0.65rem; font-size: 0.85rem; background-color: var(--color-surface); color: var(--color-text-main); border: 1px solid var(--color-border); border-radius: var(--radius-md);">
-                                <option value="ta-IN">Tamil (தமிழ் - ta-IN)</option>
-                                <option value="en-IN">English (en-IN)</option>
-                            </select>
-                        </div>
-
-                        <!-- 3. Start Speaking Button -->
-                        <button type="button" id="btn-start-voice" class="btn btn-success">
-                            <i class="fa-solid fa-microphone"></i> <span data-i18n="btn_start_voice">Start Speaking (பேசுக)</span>
-                        </button>
-
-                        <!-- 4. Stop Button -->
-                        <button type="button" id="btn-stop-voice" class="btn btn-danger" style="display:none;">
-                            <i class="fa-solid fa-microphone-slash"></i> <span data-i18n="btn_stop_voice">Stop</span>
-                        </button>
-
-                        <!-- 8. Replay Button -->
-                        <button type="button" id="btn-replay-voice" class="btn btn-outline">
-                            <i class="fa-solid fa-rotate-right"></i> <span data-i18n="btn_replay_voice">Repeat Guidance</span>
-                        </button>
-                    </div>
-
-                    <!-- 6 & 7. Recognized Text Display & Confirmation Controls -->
-                    <div id="voice-transcript-box" class="voice-transcript-box" style="display: none; margin-top: 1rem; padding: 0.85rem 1.1rem; border-radius: var(--radius-md); border: 1px solid var(--color-border); background: var(--color-surface-alt);">
-                        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem;">
-                            <div>
-                                <span style="font-size: 0.8rem; font-weight: 700; color: var(--color-primary);"><i class="fa-solid fa-comment-dots"></i> Recognized Speech (அடையாளம் காணப்பட்ட சொல்):</span>
-                                <div id="voice-transcript-text" style="font-size: 1.05rem; font-weight: 800; color: var(--color-text-main); margin-top: 2px;">"..."</div>
-                            </div>
-                            <div style="display: flex; gap: 0.5rem;">
-                                <!-- 7. Confirm Button -->
-                                <button type="button" id="btn-voice-confirm" class="btn btn-success btn-sm">
-                                    <i class="fa-solid fa-check"></i> <span data-i18n="btn_confirm">Confirm</span>
-                                </button>
-                                <!-- 7. Cancel Button -->
-                                <button type="button" id="btn-voice-cancel" class="btn btn-outline btn-sm">
-                                    <i class="fa-solid fa-xmark"></i> <span data-i18n="btn_cancel">Cancel</span>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </section>
-        </section>
-
-        <!-- ===================================================================
-             BEGINNER-FRIENDLY GUIDED SIMPLE MODE VIEW (Toggleable)
-             =================================================================== -->
-        <section id="simple-mode-view" class="simple-mode-panel" style="display: none;">
-            <div class="simple-mode-header">
-                <div>
-                    <h2><i class="fa-solid fa-hands-holding-child"></i> Guided Simple Operating Mode (எளிய முறை)</h2>
-                    <p class="simple-mode-desc">Designed for high accessibility, minimal typing, barcode scanning, and Tamil voice assistance.</p>
-                </div>
-                <div class="simple-mode-badges">
-                    <span class="badge badge-safe"><i class="fa-solid fa-check"></i> High Contrast Active</span>
-                    <span class="badge badge-warning" id="simple-voice-badge"><i class="fa-solid fa-microphone"></i> Voice Ready (தமிழ்/English)</span>
+        <!-- 3-Step Product Pitch Strip -->
+        <div class="pitch-strip">
+            <div class="pitch-step">
+                <div class="pitch-num">1</div>
+                <div class="pitch-text">
+                    <strong data-i18n="step1_predict">1. Predict Days Left</strong>
+                    <small>Usable stock ÷ daily use</small>
                 </div>
             </div>
-
-            <!-- Quick Action Cards (4 Large Touch Buttons) -->
-            <div class="simple-actions-grid">
-                <button id="btn-simple-wizard" class="simple-action-card card-add">
-                    <div class="card-icon"><i class="fa-solid fa-box-open"></i></div>
-                    <div class="card-title">1. Add or Update Stock</div>
-                    <div class="card-sub">Guided 3-step entry with barcode & voice assistance</div>
-                    <div class="card-action-tag">Start Step 1 <i class="fa-solid fa-arrow-right"></i></div>
-                </button>
-
-                <button id="btn-simple-expiry" class="simple-action-card card-expiry">
-                    <div class="card-icon"><i class="fa-solid fa-clock-rotate-left"></i></div>
-                    <div class="card-title">2. Check Medicine Expiry</div>
-                    <div class="card-sub">See batches expiring soon & safe usable stock</div>
-                    <div class="card-action-tag">View Expiry List <i class="fa-solid fa-arrow-right"></i></div>
-                </button>
-
-                <button id="btn-simple-alerts" class="simple-action-card card-alerts">
-                    <div class="card-icon"><i class="fa-solid fa-volume-high"></i></div>
-                    <div class="card-title">3. View Stock Warnings</div>
-                    <div class="card-sub">Plain-language explanations with Tamil voice audio</div>
-                    <div class="card-action-tag">Listen to Warnings <i class="fa-solid fa-arrow-right"></i></div>
-                </button>
-
-                <button id="btn-simple-transfers" class="simple-action-card card-transfers">
-                    <div class="card-icon"><i class="fa-solid fa-truck-fast"></i></div>
-                    <div class="card-title">4. Review Transfers</div>
-                    <div class="card-sub">1-click request transfers from nearby surplus PHCs</div>
-                    <div class="card-action-tag">Check Transfers <i class="fa-solid fa-arrow-right"></i></div>
-                </button>
-            </div>
-
-            <!-- Simple Mode Content Display Box -->
-            <div id="simple-mode-content" class="simple-content-box" style="display: none;">
-                <div class="simple-box-header">
-                    <h3 id="simple-box-title">Content Details</h3>
-                    <button id="btn-close-simple-box" class="btn btn-outline btn-sm">&times; Close View</button>
+            <div class="pitch-arrow">→</div>
+            <div class="pitch-step">
+                <div class="pitch-num">2</div>
+                <div class="pitch-text">
+                    <strong data-i18n="step2_sideways">2. Look Sideways (Surplus)</strong>
+                    <small>Nearby PHCs donate surplus >30d</small>
                 </div>
-                <div id="simple-box-body" class="simple-box-body"></div>
             </div>
-        </section>
-
-        <!-- Key Operational Summary Cards (Advanced / Standard Mode) -->
-        <section class="metrics-bar" id="kpi-summary">
-            <div class="metric-cell">
-                <span class="metric-label">PHCs Monitored</span>
-                <div class="metric-val" id="metric-centres">4</div>
-                <span class="metric-sub">Primary Health Network</span>
+            <div class="pitch-arrow">→</div>
+            <div class="pitch-step">
+                <div class="pitch-num">3</div>
+                <div class="pitch-text">
+                    <strong data-i18n="step3_district">3. Then Look Up (District)</strong>
+                    <small>Request remaining deficit from district</small>
+                </div>
             </div>
+        </div>
 
-            <div class="metric-cell">
-                <span class="metric-label">Medicines Tracked</span>
-                <div class="metric-val" id="metric-medicines">6</div>
-                <span class="metric-sub">Essential Drug List Items</span>
+        <!-- KPI Headline Summary Cards -->
+        <div id="kpi-summary" class="kpi-grid">
+            <div class="kpi-card kpi-critical">
+                <div class="kpi-label" data-i18n="kpi_critical">Critical Shortage</div>
+                <div id="metric-critical" class="kpi-val">0</div>
+                <div class="kpi-sub">Needs replenishment now</div>
             </div>
-
-            <div class="metric-cell cell-critical">
-                <span class="metric-label">Critical Shortages</span>
-                <div class="metric-val" id="metric-critical">0</div>
-                <span class="metric-sub" id="metric-critical-sub">≤ Lead Time (10 Days)</span>
+            <div class="kpi-card kpi-transfers">
+                <div class="kpi-label" data-i18n="kpi_transfers">Transfers Recommended</div>
+                <div id="metric-transfers" class="kpi-val">0</div>
+                <div class="kpi-sub">Inter-PHC surplus transfers</div>
             </div>
-
-            <div class="metric-cell cell-transfer">
-                <span class="metric-label">Suggested Transfers</span>
-                <div class="metric-val" id="metric-transfers">0</div>
-                <span class="metric-sub" id="metric-transfer-units">0 units available</span>
+            <div class="kpi-card kpi-district">
+                <div class="kpi-label" data-i18n="kpi_district">District Order Needed</div>
+                <div id="metric-district" class="kpi-val">0</div>
+                <div class="kpi-sub">Uncovered stock deficit</div>
             </div>
-
-            <div class="metric-cell cell-pending">
-                <span class="metric-label">Pending Approvals</span>
-                <div class="metric-val" id="metric-pending-approvals">0</div>
-                <span class="metric-sub">Awaiting Officer Sign-off</span>
+            <div class="kpi-card kpi-approvals">
+                <div class="kpi-label" data-i18n="kpi_approvals">Pending MO Approvals</div>
+                <div id="metric-pending-approvals" class="kpi-val">0</div>
+                <div class="kpi-sub">Awaiting PIN verification</div>
             </div>
+        </div>
 
-            <div class="metric-cell cell-procurement">
-                <span class="metric-label">District Deficit</span>
-                <div class="metric-val" id="metric-district-req">0</div>
-                <span class="metric-sub">Units Needing District Order</span>
+        <!-- Filters Toolbar -->
+        <div class="filter-toolbar">
+            <div class="filter-group">
+                <input type="search" id="filter-search" class="form-input" placeholder="Search medicine or centre..." data-i18n-placeholder="filter_search">
             </div>
-
-            <div class="metric-cell cell-expiry">
-                <span class="metric-label">Expired Batches</span>
-                <div class="metric-val" id="metric-expired">0</div>
-                <span class="metric-sub">Excluded from usable stock</span>
+            <div class="filter-group">
+                <select id="filter-centre" class="form-select"></select>
             </div>
-
-            <div class="metric-cell cell-near-expiry">
-                <span class="metric-label">Near-Expiry (<=60d)</span>
-                <div class="metric-val" id="metric-near-expiry">0</div>
-                <span class="metric-sub">Still usable, use first</span>
+            <div class="filter-group">
+                <select id="filter-medicine" class="form-select"></select>
             </div>
-        </section>
-
-        <!-- Filters & Search Toolbar -->
-        <section class="filter-toolbar">
-            <div class="search-input-box">
-                <i class="fa-solid fa-magnifying-glass"></i>
-                <input type="text" id="filter-search" placeholder="Search PHC, medicine name, or batch code...">
-            </div>
-
-            <div class="filter-field">
-                <label for="filter-centre">PHC Centre:</label>
-                <select id="filter-centre">
-                    <option value="ALL">All Health Centres</option>
-                </select>
-            </div>
-
-            <div class="filter-field">
-                <label for="filter-medicine">Medicine:</label>
-                <select id="filter-medicine">
-                    <option value="ALL">All Medicines</option>
-                </select>
-            </div>
-
-            <div class="filter-field">
-                <label for="filter-urgency">Status:</label>
-                <select id="filter-urgency">
+            <div class="filter-group">
+                <select id="filter-urgency" class="form-select">
                     <option value="ALL">All Urgencies</option>
-                    <option value="CRITICAL">Critical (&le; Lead Time)</option>
-                    <option value="WARNING">Warning (&le; 1.5x Lead Time)</option>
-                    <option value="SAFE">Safe Stock</option>
-                    <option value="OUTDATED">Outdated Record (>14d)</option>
+                    <option value="CRITICAL">Critical Only</option>
+                    <option value="WARNING">Warning Only</option>
+                    <option value="SAFE">Safe Only</option>
+                    <option value="OUTDATED">Outdated Only</option>
                 </select>
             </div>
-
-            <div class="filter-field lead-time-field">
-                <label for="input-lead-time" title="Replenishment Lead Time in Days">Lead Time:</label>
-                <input type="number" id="input-lead-time" value="10" min="1" max="90">
-                <span class="unit-tag">Days</span>
+            <div class="filter-group filter-leadtime">
+                <label for="input-lead-time">Lead Time:</label>
+                <input type="number" id="input-lead-time" class="form-input num-input" value="10" min="1" max="90"> days
             </div>
-        </section>
+        </div>
 
-        <!-- TAB 1: SHORTAGE OVERVIEW & NEEDS ATTENTION -->
+        <!-- TAB 1: OVERVIEW -->
         <section id="tab-overview" class="tab-content active">
-            <div class="panel">
-                <div class="panel-header">
-                    <div>
-                        <h2><i class="fa-solid fa-bell"></i> Critical Shortages & Action Items</h2>
-                        <p class="panel-desc">Primary Health Centres requiring immediate attention due to imminent medicine depletion.</p>
-                    </div>
-                    <span class="count-pill" id="needs-attention-count">0 items need action</span>
-                </div>
-                <div class="table-container">
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Priority</th>
-                                <th>PHC Health Centre</th>
-                                <th>Medicine Item</th>
-                                <th>Usable Stock</th>
-                                <th>Daily Cons.</th>
-                                <th>Days Left</th>
-                                <th>Est. Stock-Out Date</th>
-                                <th>Risk Reason & Classification</th>
-                                <th>Recommended Action</th>
-                            </tr>
-                        </thead>
-                        <tbody id="overview-tbody">
-                            <!-- Populated via script.js -->
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+            <h3 class="section-title" data-i18n="section_alerts_title">Active Stock Alert Cards (Action Required)</h3>
+            <div id="active-alerts-cards-container" class="alert-cards-grid"></div>
         </section>
 
-        <!-- TAB 2: INTER-PHC REDISTRIBUTION & DISTRICT PROCUREMENT -->
-        <section id="tab-redistribution" class="tab-content">
-            <div class="redistribution-stack">
-                <!-- Signature Feature: Transfer Recommendations -->
-                <div class="panel">
-                    <div class="panel-header">
-                        <div>
-                            <h2><i class="fa-solid fa-truck-ramp-box"></i> Inter-PHC Safe Surplus Transfer Recommendations</h2>
-                            <p class="panel-desc">Greedy optimization matching nearby surplus donor PHCs to recipient shortages while strictly preserving donor safety stock.</p>
-                        </div>
-                    </div>
-                    <div class="table-container">
-                        <table class="data-table">
-                            <thead>
-                                <tr>
-                                    <th>Priority</th>
-                                    <th>Transfer Route Diagram</th>
-                                    <th>Medicine Item</th>
-                                    <th>Distance</th>
-                                    <th>Suggested Transfer</th>
-                                    <th>Effect on Both Centres</th>
-                                    <th>Algorithm Safety Reasoning</th>
-                                    <th>Review & Execute Transfer</th>
-                                </tr>
-                            </thead>
-                            <tbody id="transfer-tbody">
-                                <!-- Populated via script.js -->
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+        <!-- TAB 2: TRANSFERS -->
+        <section id="tab-transfers" class="tab-content">
+            <h3 class="section-title" data-i18n="section_transfers_title">Recommended Inter-PHC Stock Transfers</h3>
+            <div id="suggested-transfers-container" class="transfers-grid"></div>
 
-                <!-- District Procurement Requirements -->
-                <div class="panel">
-                    <div class="panel-header">
-                        <div>
-                            <h2><i class="fa-solid fa-warehouse"></i> Remaining District Authority Procurement Deficit</h2>
-                            <p class="panel-desc">Shortfalls that CANNOT be satisfied by nearby PHC safe surplus and require immediate district purchase/dispatch.</p>
-                        </div>
-                    </div>
-                    <div class="table-container">
-                        <table class="data-table">
-                            <thead>
-                                <tr>
-                                    <th>Affected PHC</th>
-                                    <th>Medicine Required</th>
-                                    <th>Total Shortfall</th>
-                                    <th>Covered by Transfers</th>
-                                    <th>Remaining District Requirement</th>
-                                    <th>Audit Note & Urgency</th>
-                                </tr>
-                            </thead>
-                            <tbody id="district-tbody">
-                                <!-- Populated via script.js -->
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
+            <h3 class="section-title section-space" data-i18n="section_district_title">District Supply Procurement Requirements</h3>
+            <div id="district-requirements-container"></div>
         </section>
 
-        <!-- TAB NEW: PENDING APPROVALS & AUDIT LOG -->
+        <!-- TAB 3: APPROVALS -->
         <section id="tab-approvals" class="tab-content">
-            <div class="panel">
-                <div class="panel-header">
-                    <div>
-                        <h2><i class="fa-solid fa-user-clock"></i> Pending Medical Officer Approvals</h2>
-                        <p class="panel-desc">Inter-PHC stock transfer requests submitted for Medical Officer verification and authorization.</p>
-                    </div>
-                </div>
-                <div class="table-container">
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Requested At</th>
-                                <th>Transfer Route</th>
-                                <th>Medicine</th>
-                                <th>Qty</th>
-                                <th>Effect on Both Centres</th>
-                                <th>Status</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="pending-tbody">
-                            <!-- Populated via script.js -->
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <div class="panel" style="margin-top: 1.5rem;">
-                <div class="panel-header">
-                    <div>
-                        <h2><i class="fa-solid fa-file-signature"></i> Transfer Audit Log</h2>
-                        <p class="panel-desc">Historical record of all stock redistribution requests, approvals, rejections, and stock movements.</p>
-                    </div>
-                </div>
-                <div class="table-container">
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Timestamp</th>
-                                <th>Action</th>
-                                <th>Officer</th>
-                                <th>Route</th>
-                                <th>Medicine</th>
-                                <th>Qty</th>
-                                <th>Note</th>
-                            </tr>
-                        </thead>
-                        <tbody id="audit-tbody">
-                            <!-- Populated via script.js -->
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+            <h3 class="section-title">Pending Medical Officer Approvals</h3>
+            <div id="pending-approvals-container"></div>
         </section>
 
-        <!-- TAB 3: FULL INVENTORY FORECASTS TABLE -->
+        <!-- TAB 4: INVENTORY -->
         <section id="tab-inventory" class="tab-content">
-            <div class="panel">
-                <div class="panel-header">
-                    <div>
-                        <h2><i class="fa-solid fa-list-check"></i> Complete PHC Medicine Inventory Forecasts</h2>
-                        <p class="panel-desc">Stockout forecasts based on physical stock minus expired batch quantities, daily consumption, and lead-time risk parameters.</p>
-                    </div>
-                    <span class="count-pill" id="inventory-count">Showing 0 items</span>
-                </div>
-                <div class="table-container">
-                    <table class="data-table" id="inventory-table">
-                        <thead>
-                            <tr>
-                                <th>PHC Health Centre</th>
-                                <th>Medicine Item</th>
-                                <th>Usable Stock</th>
-                                <th>Daily Cons.</th>
-                                <th>Days Left</th>
-                                <th>Est. Stock-Out Date</th>
-                                <th>Target Stock</th>
-                                <th>Shortfall</th>
-                                <th>Risk Classification & Reason</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="inventory-tbody">
-                            <!-- Populated via script.js -->
-                        </tbody>
-                    </table>
-                </div>
+            <div class="table-header-bar">
+                <h3>Physical Stock Records</h3>
+                <button class="btn btn-primary btn-sm" onclick="document.getElementById('modal-stock').classList.add('open')">
+                    <svg class="icon"><use href="#icon-plus"></use></svg> Add Inventory Item
+                </button>
             </div>
+            <div id="inventory-table-container"></div>
         </section>
 
-        <!-- TAB 4: BATCHES & EXPIRY TRACKING -->
-        <section id="tab-batch" class="tab-content">
-            <div class="panel">
-                <div class="panel-header">
-                    <div>
-                        <h2><i class="fa-solid fa-boxes-stacked"></i> Medicine Batch & Expiry Management</h2>
-                        <p class="panel-desc">Tracks batch numbers, manufacturing dates, expiry dates, and automatically excludes expired quantities from usable inventory.</p>
-                    </div>
-                    <button id="btn-add-batch-modal" class="btn btn-primary btn-sm">
-                        <i class="fa-solid fa-plus"></i> Register Batch
-                    </button>
-                </div>
-                <div class="table-container">
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Batch Number</th>
-                                <th>PHC Health Centre</th>
-                                <th>Medicine Item</th>
-                                <th>Batch Quantity</th>
-                                <th>Expiry Date</th>
-                                <th>Days to Expiry</th>
-                                <th>Usability Status</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="batch-tbody">
-                            <!-- Populated via script.js -->
-                        </tbody>
-                    </table>
-                </div>
+        <!-- TAB 5: BATCHES -->
+        <section id="tab-batches" class="tab-content">
+            <div class="table-header-bar">
+                <h3>Registered Medicine Batches & Expiry Dates</h3>
+                <button class="btn btn-primary btn-sm" id="btn-add-batch-modal">
+                    <svg class="icon"><use href="#icon-plus"></use></svg> Add Batch Record
+                </button>
             </div>
+            <div id="batch-table-container"></div>
         </section>
 
-        <!-- TAB 5: FACILITY RISK OVERVIEW & NETWORK MATRIX -->
+        <!-- TAB 6: NETWORK -->
         <section id="tab-network" class="tab-content">
-            <div class="facility-grid" id="facility-risk-container">
-                <!-- Dynamic PHC facility risk cards -->
-            </div>
+            <h3 class="section-title">Health Centre Network Operational Overview</h3>
+            <div id="facility-cards-container" class="facility-grid"></div>
+        </section>
 
-            <div class="panel" style="margin-top: 1.5rem;">
-                <div class="panel-header">
-                    <div>
-                        <h2><i class="fa-solid fa-map-location-dot"></i> PHC Geographic Distance Matrix (km)</h2>
-                        <p class="panel-desc">Inter-PHC distances used by the redistribution engine to prefer nearby donor clinics.</p>
+        <!-- TAB 7: SIMULATOR -->
+        <section id="tab-simulator" class="tab-content">
+            <h3 class="section-title">Supply Shock & Consumption Stress Test Simulator</h3>
+            <div class="simulator-card">
+                <div class="sim-controls-grid">
+                    <div class="form-group">
+                        <label for="sim-demand-multiplier">Demand Multiplier (Epidemic Spike):</label>
+                        <input type="range" id="sim-demand-multiplier" min="0.5" max="3.0" step="0.1" value="1.0">
+                    </div>
+                    <div class="form-group">
+                        <label for="sim-delay-days">District Shipment Delay (Days):</label>
+                        <input type="number" id="sim-delay-days" class="form-input" value="0" min="0" max="30">
+                    </div>
+                    <div class="form-group">
+                        <label for="sim-supply-shock">Immediate Stock Loss (Damage/Wastage):</label>
+                        <input type="number" id="sim-supply-shock" class="form-input" value="0" min="0">
                     </div>
                 </div>
-                <div class="table-container">
-                    <table class="data-table" id="distance-matrix-table">
-                        <!-- Populated via script.js -->
-                    </table>
+                <div class="sim-actions">
+                    <button id="btn-reset-sim" class="btn btn-outline btn-sm">Reset Parameters</button>
                 </div>
+            </div>
+            <div id="sim-results-container" class="section-space"></div>
+        </section>
+
+        <!-- TAB 8: VOICE -->
+        <section id="tab-voice" class="tab-content">
+            <h3 class="section-title">Hands-Free Voice Stock Assistance</h3>
+            <div class="voice-card">
+                <p data-i18n="voice_help_text">Speak medicine names or quantities in Tamil or English to fill stock entries hands-free with mandatory confirmation.</p>
+                <div class="voice-controls">
+                    <button id="btn-toggle-voice" class="btn btn-primary">
+                        <svg class="icon"><use href="#icon-mic"></use></svg> <span id="lbl-start-voice">Start Speaking (பேசுக)</span>
+                    </button>
+                    <select id="select-voice-lang" class="btn btn-outline select-compact">
+                        <option value="ta-IN">தமிழ் (ta-IN)</option>
+                        <option value="en-IN">English (en-IN)</option>
+                    </select>
+                </div>
+                <div id="voice-status-indicator" class="badge badge-pending section-space">Voice System Ready</div>
             </div>
         </section>
 
-        <!-- TAB 6: WHAT-IF SUPPLY CHAIN SIMULATOR -->
-        <section id="tab-simulation" class="tab-content">
-            <div class="sim-panel">
-                <div class="sim-header">
-                    <div>
-                        <h2><i class="fa-solid fa-sliders"></i> Interactive What-If Supply Chain & Demand Simulator</h2>
-                        <p class="panel-desc">Stress test the healthcare network against disease outbreak surges, monsoon logistics delays, or supply damage shocks.</p>
-                    </div>
-                    <button id="btn-reset-sim" class="btn btn-outline btn-sm">
-                        <i class="fa-solid fa-rotate-left"></i> Reset Simulator
-                    </button>
-                </div>
-
-                <div class="sim-controls-grid">
-                    <div class="sim-card">
-                        <label for="sim-demand-multiplier">
-                            <span><i class="fa-solid fa-chart-line"></i> Demand Outbreak Multiplier:</span>
-                            <strong id="val-demand-multiplier">1.0x</strong>
-                        </label>
-                        <input type="range" id="sim-demand-multiplier" min="1.0" max="3.0" step="0.1" value="1.0">
-                        <p class="sim-note">Simulates patient consumption surges during seasonal outbreaks (e.g. 2.0x surge).</p>
-                    </div>
-
-                    <div class="sim-card">
-                        <label for="sim-delay-days">
-                            <span><i class="fa-solid fa-truck-fast"></i> Supplier Delivery Delay:</span>
-                            <strong id="val-delay-days">+0 days</strong>
-                        </label>
-                        <input type="range" id="sim-delay-days" min="0" max="30" step="1" value="0">
-                        <p class="sim-note">Simulates transport or weather delays extending resupply lead time.</p>
-                    </div>
-
-                    <div class="sim-card">
-                        <label for="sim-supply-shock">
-                            <span><i class="fa-solid fa-box-archive"></i> Cold-Chain / Spoilage Loss:</span>
-                            <strong id="val-supply-shock">0%</strong>
-                        </label>
-                        <input type="range" id="sim-supply-shock" min="0" max="50" step="5" value="0">
-                        <p class="sim-note">Simulates sudden batch spoilage or cold chain breakdown stock loss.</p>
-                    </div>
-
-                    <div class="sim-card sim-checkbox-card">
-                        <label for="sim-assume-transfers">
-                            <input type="checkbox" id="sim-assume-transfers">
-                            <span><strong>Assume suggested transfers are executed</strong> (stress-test after redistribution)</span>
-                        </label>
-                    </div>
-                </div>
-
-                <div class="sim-status-banner" id="sim-impact-summary">
-                    <i class="fa-solid fa-circle-check"></i> Baseline mode active. Adjust sliders above to stress test supply network.
-                </div>
-
-                <div class="panel">
-                    <div class="panel-header">
-                        <h3><i class="fa-solid fa-microchip"></i> What-If Simulated Stockout Projections</h3>
-                    </div>
-                    <div class="table-container">
-                        <table class="data-table">
-                            <thead>
-                                <tr>
-                                    <th>PHC Centre</th>
-                                    <th>Medicine Item</th>
-                                    <th>Baseline Days</th>
-                                    <th>Simulated Days</th>
-                                    <th>Simulated Stockout Date</th>
-                                    <th>Baseline Risk</th>
-                                    <th>Simulated Risk</th>
-                                    <th>Simulated District Need</th>
-                                </tr>
-                            </thead>
-                            <tbody id="sim-tbody">
-                                <!-- Populated via script.js -->
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
+        <!-- Audit Log Section -->
+        <section class="section-space">
+            <h3 class="section-title">System Audit Log</h3>
+            <div id="audit-log-container"></div>
         </section>
     </main>
 
-    <!-- Footer -->
-    <footer class="app-footer">
-        <p>MEDI-CARE &copy; 2026. Designed for Primary Health Centres & District Health Officers.</p>
-    </footer>
+    <!-- MODALS -->
 
-    <!-- ===================================================================
-         MODALS & DIALOG OVERLAYS
-         =================================================================== -->
-
-    <!-- Guided 3-Step Stock Entry Wizard Modal -->
-    <div id="modal-simple-wizard" class="modal-overlay">
-        <div class="modal-card modal-md">
+    <!-- Choice Modal -->
+    <div id="modal-add-stock-choice" class="modal-overlay">
+        <div class="modal-content modal-md">
             <div class="modal-header">
-                <h3><i class="fa-solid fa-wand-magic-sparkles"></i> 3-Step Guided Stock Entry (எளிய முறை)</h3>
-                <button class="modal-close" id="btn-close-wizard-modal">&times;</button>
+                <h3>Add Stock Record</h3>
+                <button id="btn-close-choice-modal" class="btn-close">&times;</button>
             </div>
             <div class="modal-body">
-                <!-- Stepper Progress Bar -->
-                <div class="wizard-stepper-bar">
-                    <div class="step-pill active" id="step-pill-1">1. Medicine</div>
-                    <div class="step-pill" id="step-pill-2">2. Quantity & Expiry</div>
-                    <div class="step-pill" id="step-pill-3">3. Confirm</div>
-                </div>
-
-                <!-- STEP 1: Medicine Selection & Barcode/Voice Input -->
-                <div id="wizard-step-1" class="wizard-step-page">
-                    <h4>Step 1: Select or Scan Medicine</h4>
-                    <div class="form-group">
-                        <label for="wizard-centre">Health Centre PHC:</label>
-                        <select id="wizard-centre" class="input-large"></select>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="wizard-medicine">Medicine Name:</label>
-                        <select id="wizard-medicine" class="input-large"></select>
-                    </div>
-
-                    <div class="wizard-input-actions">
-                        <button type="button" id="btn-wizard-scan" class="btn btn-outline btn-lg">
-                            <i class="fa-solid fa-barcode"></i> Scan Barcode (பார்கோடு)
-                        </button>
-                        <button type="button" id="btn-wizard-voice" class="btn btn-outline btn-lg">
-                            <i class="fa-solid fa-microphone"></i> Speak Name (தமிழ்/Eng)
-                        </button>
-                    </div>
-
-                    <div id="wizard-voice-status" class="voice-status-box" style="display:none;"></div>
-                </div>
-
-                <!-- STEP 2: Large Touch Quantity & Expiry Presets -->
-                <div id="wizard-step-2" class="wizard-step-page" style="display:none;">
-                    <h4>Step 2: Enter Physical Stock & Expiry</h4>
-                    <div class="form-group">
-                        <label for="wizard-qty">Physical Stock Quantity (Units):</label>
-                        <div class="stepper-box">
-                            <button type="button" class="btn btn-stepper" id="btn-qty-minus10">-10</button>
-                            <button type="button" class="btn btn-stepper" id="btn-qty-minus1">-1</button>
-                            <input type="number" id="wizard-qty" value="100" min="0" class="input-large input-qty">
-                            <button type="button" class="btn btn-stepper" id="btn-qty-plus1">+1</button>
-                            <button type="button" class="btn btn-stepper" id="btn-qty-plus10">+10</button>
-                            <button type="button" class="btn btn-stepper" id="btn-qty-plus50">+50</button>
-                        </div>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="wizard-expiry">Batch Expiry Date:</label>
-                        <input type="date" id="wizard-expiry" class="input-large">
-                        <div class="preset-pills">
-                            <span class="preset-pill" id="preset-3m">+3 Months</span>
-                            <span class="preset-pill" id="preset-6m">+6 Months</span>
-                            <span class="preset-pill" id="preset-1y">+1 Year</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- STEP 3: Plain-Language Summary & Confirm -->
-                <div id="wizard-step-3" class="wizard-step-page" style="display:none;">
-                    <h4>Step 3: Review Plain-Language Summary</h4>
-                    <div id="wizard-summary-box" class="summary-box-highlight"></div>
-                    <div style="margin-top:0.5rem; text-align:right;">
-                        <button type="button" id="btn-read-summary-audio" class="btn btn-outline btn-sm">
-                            <i class="fa-solid fa-volume-high"></i> Listen in Tamil/English (கேளுங்கள்)
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Wizard Actions -->
-                <div class="form-actions" style="margin-top: 1rem;">
-                    <button type="button" class="btn btn-outline" id="btn-wizard-back" style="display:none;">
-                        <i class="fa-solid fa-arrow-left"></i> Back
+                <p data-i18n="choice_subtitle">Select how you want to add medicine stock to the inventory:</p>
+                <div class="choice-buttons-grid">
+                    <button id="btn-choice-scan" class="choice-card">
+                        <svg class="icon icon-xl"><use href="#icon-barcode"></use></svg>
+                        <strong data-i18n="btn_scan_barcode">Scan Barcode</strong>
+                        <small data-i18n="choice_scan_sub">Use camera to scan medicine GTIN barcode</small>
                     </button>
-                    <button type="button" class="btn btn-primary" id="btn-wizard-next">
-                        Next <i class="fa-solid fa-arrow-right"></i>
-                    </button>
-                    <button type="button" class="btn btn-success" id="btn-wizard-submit" style="display:none;">
-                        <i class="fa-solid fa-check"></i> Confirm & Save Stock
+                    <button id="btn-choice-manual" class="choice-card">
+                        <svg class="icon icon-xl"><use href="#icon-plus"></use></svg>
+                        <strong data-i18n="btn_enter_manually">Enter Manually</strong>
+                        <small data-i18n="choice_manual_sub">Fill out physical stock form or wizard</small>
                     </button>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Camera Barcode Scanner Modal -->
-    <div id="modal-barcode-scanner" class="modal-overlay">
-        <div class="modal-card modal-md">
-            <div class="modal-header">
-                <h3><i class="fa-solid fa-barcode"></i> Camera Barcode Scanner (பார்கோடு)</h3>
-                <button class="modal-close" id="btn-close-barcode-modal">&times;</button>
-            </div>
-            <div class="modal-body">
-                <!-- Camera Controls & Status Badge -->
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
-                    <span id="camera-status-badge" class="badge badge-pending">Camera Idle</span>
-                    <button type="button" id="btn-stop-camera" class="btn btn-danger btn-sm" style="display:none;">
-                        <i class="fa-solid fa-video-slash"></i> Stop Camera
-                    </button>
-                </div>
-
-                <!-- Camera Viewfinder Live Stream Container -->
-                <div class="viewfinder-container">
-                    <video id="barcode-video" autoplay playsinline muted></video>
-                    <div class="viewfinder-grid">
-                        <div class="laser-line"></div>
-                        <span class="viewfinder-text">Align barcode inside green frame</span>
-                    </div>
-                </div>
-
-                <!-- Fallback Manual Barcode Search -->
-                <div class="form-group" style="margin-top: 0.75rem;">
-                    <label for="input-manual-barcode">Or Enter Barcode GTIN Manually:</label>
-                    <div style="display:flex; gap:0.5rem;">
-                        <input type="text" id="input-manual-barcode" placeholder="e.g. 8901234567890" style="flex:1;">
-                        <button type="button" id="btn-lookup-manual-barcode" class="btn btn-primary">
-                            <i class="fa-solid fa-search"></i> Lookup
-                        </button>
-                    </div>
-                </div>
-                <div id="barcode-lookup-result" class="barcode-result-box" style="display:none;">
-                    <button id="btn-apply-barcode-med" style="display:none;"></button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Add/Edit Stock Modal -->
+    <!-- Inventory Form Modal -->
     <div id="modal-stock" class="modal-overlay">
-        <div class="modal-card">
+        <div class="modal-content modal-md">
             <div class="modal-header">
-                <h3><i class="fa-solid fa-file-circle-plus"></i> Add or Update Inventory Stock</h3>
-                <button class="modal-close btn-close-modal">&times;</button>
+                <h3>Update Stock Count</h3>
+                <button class="btn-close btn-close-modal">&times;</button>
             </div>
             <form id="form-stock" class="modal-body">
                 <div class="form-group">
-                    <label for="modal-centre">Health Centre PHC:</label>
-                    <select id="modal-centre" required></select>
+                    <label for="modal-centre">Health Centre:</label>
+                    <select id="modal-centre" class="form-select" required></select>
                 </div>
-
                 <div class="form-group">
-                    <label for="modal-medicine">Medicine Name & Unit:</label>
-                    <input type="text" id="modal-medicine" placeholder="e.g. Paracetamol Syrup (100ml)" required>
+                    <label for="modal-medicine">Medicine Name:</label>
+                    <select id="modal-medicine" class="form-select" required></select>
                 </div>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="modal-stock-qty">Current Physical Stock Qty:</label>
-                        <input type="number" id="modal-stock-qty" min="0" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="modal-daily-cons">Avg Daily Consumption:</label>
-                        <input type="number" id="modal-daily-cons" min="0" step="0.1" required>
-                    </div>
+                <div class="form-group">
+                    <label for="modal-stock-qty">Current Physical Stock Count:</label>
+                    <input type="number" id="modal-stock-qty" class="form-input" min="0" required>
                 </div>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="modal-target-days">Target Coverage (Days):</label>
-                        <input type="number" id="modal-target-days" value="30" min="1" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="modal-last-updated">Last Updated Date:</label>
-                        <input type="date" id="modal-last-updated" required>
-                    </div>
+                <div class="form-group">
+                    <label for="modal-daily-cons">Daily Consumption Rate:</label>
+                    <input type="number" id="modal-daily-cons" class="form-input" min="0" step="0.1" required>
                 </div>
-
-                <div class="form-actions">
-                    <button type="button" class="btn btn-outline btn-close-modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Save Inventory Item</button>
+                <div class="form-group">
+                    <label for="modal-target-days">Target Coverage Days:</label>
+                    <input type="number" id="modal-target-days" class="form-input" value="30" min="1" required>
+                </div>
+                <div class="form-group">
+                    <label for="modal-last-updated">Audit Date:</label>
+                    <input type="date" id="modal-last-updated" class="form-input" required>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline btn-close-modal" data-i18n="btn_cancel">Cancel</button>
+                    <button type="submit" class="btn btn-primary" data-i18n="btn_confirm">Save Record</button>
                 </div>
             </form>
         </div>
     </div>
 
-    <!-- Add Batch Modal -->
+    <!-- Batch Modal -->
     <div id="modal-batch" class="modal-overlay">
-        <div class="modal-card">
+        <div class="modal-content modal-md">
             <div class="modal-header">
-                <h3><i class="fa-solid fa-box-archive"></i> Register New Medicine Batch</h3>
-                <button class="modal-close" id="btn-close-batch-modal">&times;</button>
+                <h3>Register Medicine Batch</h3>
+                <button id="btn-close-batch-modal" class="btn-close">&times;</button>
             </div>
             <form id="form-batch" class="modal-body">
                 <div class="form-group">
-                    <label for="modal-batch-centre">Health Centre PHC:</label>
-                    <select id="modal-batch-centre" required></select>
+                    <label for="modal-batch-centre">Health Centre:</label>
+                    <select id="modal-batch-centre" class="form-select" required></select>
                 </div>
-
                 <div class="form-group">
                     <label for="modal-batch-medicine">Medicine Name:</label>
-                    <select id="modal-batch-medicine" required></select>
+                    <select id="modal-batch-medicine" class="form-select" required></select>
                 </div>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="modal-batch-num">Batch Number:</label>
-                        <input type="text" id="modal-batch-num" placeholder="e.g. BATCH-2026-P01" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="modal-batch-qty">Batch Quantity:</label>
-                        <input type="number" id="modal-batch-qty" min="1" required>
-                    </div>
+                <div class="form-group">
+                    <label for="modal-batch-num">Batch Number / Lot ID:</label>
+                    <input type="text" id="modal-batch-num" class="form-input" placeholder="e.g. BATCH-2025-X01" required>
                 </div>
-
+                <div class="form-group">
+                    <label for="modal-batch-qty">Quantity in Batch:</label>
+                    <input type="number" id="modal-batch-qty" class="form-input" min="1" required>
+                </div>
                 <div class="form-group">
                     <label for="modal-batch-expiry">Expiry Date:</label>
-                    <input type="date" id="modal-batch-expiry" required>
+                    <input type="date" id="modal-batch-expiry" class="form-input" required>
                 </div>
-
-                <div class="form-actions">
-                    <button type="button" class="btn btn-outline" id="btn-cancel-batch">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Register Batch Record</button>
+                <div class="modal-footer">
+                    <button type="button" id="btn-cancel-batch" class="btn btn-outline" data-i18n="btn_cancel">Cancel</button>
+                    <button type="submit" class="btn btn-primary" data-i18n="btn_confirm">Register Batch</button>
                 </div>
             </form>
         </div>
     </div>
 
-    <!-- Request Transfer Modal -->
-    <div id="modal-request-transfer" class="modal-overlay">
-        <div class="modal-card modal-md">
+    <!-- Barcode Scanner Modal -->
+    <div id="modal-barcode-scanner" class="modal-overlay">
+        <div class="modal-content modal-md">
             <div class="modal-header">
-                <h3><i class="fa-solid fa-clipboard-check"></i> Review & Request Transfer</h3>
-                <button class="modal-close" id="btn-close-req-modal">&times;</button>
+                <h3>Camera Barcode Scanner</h3>
+                <button id="btn-close-barcode-modal" class="btn-close">&times;</button>
             </div>
             <div class="modal-body">
-                <div id="req-transfer-summary"></div>
-                <p class="sim-note"><i class="fa-solid fa-info-circle"></i> No stock moves until a Medical Officer approves.</p>
-                <div class="form-actions">
-                    <button type="button" class="btn btn-outline" id="btn-cancel-req">Cancel</button>
-                    <button type="button" class="btn btn-primary" id="btn-submit-req">Submit Request</button>
+                <div class="video-container">
+                    <video id="scanner-video" playsinline></video>
                 </div>
+                <div class="section-space">
+                    <label for="input-manual-barcode">Or enter GTIN Barcode manually:</label>
+                    <div style="display:flex; gap:0.5rem;">
+                        <input type="text" id="input-manual-barcode" class="form-input" placeholder="e.g. 8901234567890">
+                        <button id="btn-lookup-manual-barcode" class="btn btn-outline">Lookup</button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="btn-stop-camera" class="btn btn-outline">Close Scanner</button>
             </div>
         </div>
     </div>
 
-    <!-- Medical Officer Approval Modal -->
-    <div id="modal-approve-transfer" class="modal-overlay">
-        <div class="modal-card modal-md">
+    <!-- Request Transfer Confirmation Modal -->
+    <div id="modal-request-transfer" class="modal-overlay">
+        <div class="modal-content modal-lg">
             <div class="modal-header">
-                <h3><i class="fa-solid fa-user-check"></i> Medical Officer Approval</h3>
-                <button class="modal-close" id="btn-close-approve-modal">&times;</button>
+                <h3 id="req-modal-title">Confirm Inter-PHC Stock Transfer Request</h3>
+                <button id="btn-close-req-modal" class="btn-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="req-impact-summary"></div>
+            </div>
+            <div class="modal-footer">
+                <button id="btn-cancel-req" class="btn btn-outline" data-i18n="btn_cancel">Cancel</button>
+                <button id="btn-submit-req" class="btn btn-primary">Submit for MO Approval</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Approval PIN Modal -->
+    <div id="modal-approve-transfer" class="modal-overlay">
+        <div class="modal-content modal-md">
+            <div class="modal-header">
+                <h3>Medical Officer PIN Authorization</h3>
+                <button id="btn-close-approve-modal" class="btn-close">&times;</button>
             </div>
             <form id="form-approve-transfer" class="modal-body">
                 <div id="approve-route-summary"></div>
-                <div class="form-group">
+                <div class="form-group section-space">
                     <label for="input-officer-name">Medical Officer Name:</label>
-                    <input type="text" id="input-officer-name" required placeholder="e.g. Dr. A. Sharma">
+                    <input type="text" id="input-officer-name" class="form-input" placeholder="e.g. Dr. K. Sharma" required>
                 </div>
                 <div class="form-group">
                     <label for="input-officer-pin">Authorisation PIN:</label>
-                    <input type="password" id="input-officer-pin" required placeholder="Enter PIN">
-                    <small class="sim-note">Demo PIN: 1234</small>
+                    <input type="password" id="input-officer-pin" class="form-input" placeholder="Enter 4-digit PIN" required>
+                    <!-- Phase 1 bug fix: Show demo hint ONLY when demo data is loaded -->
+                    <small id="pin-demo-hint" class="sim-note" style="display:none;">Demo PIN: 1234</small>
                 </div>
                 <div class="form-group">
                     <label for="input-approve-note">Approval Note (Optional):</label>
-                    <textarea id="input-approve-note" rows="2" placeholder="Add optional instructions or comments..."></textarea>
+                    <input type="text" id="input-approve-note" class="form-input" placeholder="e.g. Dispatch via emergency vehicle">
                 </div>
-                <div class="form-actions">
-                    <button type="button" class="btn btn-outline" id="btn-cancel-approve">Cancel</button>
-                    <button type="submit" class="btn btn-success">Approve & Execute Transfer</button>
+                <div class="modal-footer">
+                    <button type="button" id="btn-cancel-approve" class="btn btn-outline" data-i18n="btn_cancel">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Approve & Execute Transfer</button>
                 </div>
             </form>
         </div>
     </div>
 
-    <!-- Reject Transfer Request Modal -->
+    <!-- Rejection Modal -->
     <div id="modal-reject-transfer" class="modal-overlay">
-        <div class="modal-card modal-md">
+        <div class="modal-content modal-md">
             <div class="modal-header">
-                <h3><i class="fa-solid fa-user-xmark"></i> Reject Transfer Request</h3>
-                <button class="modal-close" id="btn-close-reject-modal">&times;</button>
+                <h3>Reject Transfer Request</h3>
+                <button id="btn-close-reject-modal" class="btn-close">&times;</button>
             </div>
             <form id="form-reject-transfer" class="modal-body">
                 <div id="reject-route-summary"></div>
-                <div class="form-group">
-                    <label for="input-reject-reason">Reason for rejection:</label>
-                    <textarea id="input-reject-reason" rows="3" required placeholder="Explain reason for rejecting transfer..."></textarea>
+                <div class="form-group section-space">
+                    <label for="input-reject-reason">Rejection Reason:</label>
+                    <textarea id="input-reject-reason" class="form-input" rows="3" placeholder="Explain reason for rejection..." required></textarea>
                 </div>
-                <div class="form-actions">
-                    <button type="button" class="btn btn-outline" id="btn-cancel-reject">Cancel</button>
-                    <button type="submit" class="btn btn-danger">Reject Request</button>
+                <div class="modal-footer">
+                    <button type="button" id="btn-cancel-reject" class="btn btn-outline" data-i18n="btn_cancel">Cancel</button>
+                    <button type="submit" class="btn btn-outline btn-danger">Confirm Rejection</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="modal-settings" class="modal-overlay">
+        <div class="modal-content modal-lg">
+            <div class="modal-header">
+                <h3 data-i18n="settings_title">System Settings & Data Tools</h3>
+                <button id="btn-close-settings-modal" class="btn-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted" data-i18n="settings_desc">Configure application parameters or load demonstration datasets for evaluation.</p>
+
+                <div class="settings-section">
+                    <h4 data-i18n="demo_data_heading">Demonstration Benchmark Dataset</h4>
+                    <p class="text-muted" data-i18n="demo_data_desc">Load the official hackathon benchmark dataset featuring Centre A shortage (60 stock, 6 days remaining) and Centre C safe surplus (140 transfer capacity).</p>
+                    <button id="btn-load-demo-modal" class="btn btn-outline" data-i18n="btn_load_demo_confirm">Load Demo Scenario Data</button>
+                </div>
+
+                <div class="settings-section section-space">
+                    <h4>Reset Storage</h4>
+                    <p class="text-muted">Clear local storage and reset all inventory state to seed dataset.</p>
+                    <button id="btn-reset-modal" class="btn btn-outline btn-danger" data-i18n="btn_reset_storage">Clear Local Storage & Reset</button>
+                </div>
+
+                <div class="settings-section section-space">
+                    <h4>Offline Sync Status</h4>
+                    <div id="sync-status-panel-container"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="btn-cancel-settings" class="btn btn-outline" data-i18n="btn_cancel">Close</button>
+            </div>
         </div>
     </div>
 
     <!-- Confirmation Dialog Modal -->
     <div id="modal-confirm" class="modal-overlay">
-        <div class="modal-card modal-sm">
+        <div class="modal-content modal-md">
             <div class="modal-header">
-                <h3 id="confirm-title"><i class="fa-solid fa-circle-question"></i> Confirm Operational Action</h3>
-                <button class="modal-close" id="btn-close-confirm">&times;</button>
+                <h3 id="confirm-title">Confirm Action</h3>
+                <button id="btn-close-confirm" class="btn-close">&times;</button>
             </div>
             <div class="modal-body">
-                <p id="confirm-message">Are you sure you want to proceed?</p>
-                <div class="form-actions">
-                    <button type="button" class="btn btn-outline" id="btn-cancel-confirm">Cancel</button>
-                    <button type="button" class="btn btn-warning" id="btn-action-confirm">Proceed</button>
-                </div>
+                <p id="confirm-message"></p>
             </div>
-        </div>
-    </div>
-
-    <!-- Add Stock Method Selection Choice Modal -->
-    <div id="modal-add-stock-choice" class="modal-overlay">
-        <div class="modal-card modal-md">
-            <div class="modal-header">
-                <h3><i class="fa-solid fa-boxes-packing"></i> <span data-i18n="add_update_stock">Add or Update Inventory Stock</span></h3>
-                <button class="modal-close" id="btn-close-choice-modal">&times;</button>
-            </div>
-            <div class="modal-body" style="text-align: center; padding: 1.5rem 1rem;">
-                <p style="margin-bottom: 1.5rem; font-size: 1rem; color: var(--color-text-muted);" data-i18n="choice_subtitle">Select how you want to add medicine stock to the inventory:</p>
-                <div class="simple-actions-grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem;">
-                    <button type="button" id="btn-choice-scan" class="simple-action-card card-add" style="text-align: left; padding: 1.25rem;">
-                        <div class="card-icon"><i class="fa-solid fa-barcode"></i></div>
-                        <div class="card-title" data-i18n="btn_scan_barcode">Scan Barcode (பார்கோடு)</div>
-                        <div class="card-sub" data-i18n="choice_scan_sub">Use live camera to scan medicine GTIN barcode</div>
-                        <div class="card-action-tag">Open Camera <i class="fa-solid fa-camera"></i></div>
-                    </button>
-
-                    <button type="button" id="btn-choice-manual" class="simple-action-card card-transfers" style="text-align: left; padding: 1.25rem;">
-                        <div class="card-icon"><i class="fa-solid fa-keyboard"></i></div>
-                        <div class="card-title" data-i18n="btn_enter_manually">Enter Manually (கைமுறையாக)</div>
-                        <div class="card-sub" data-i18n="choice_manual_sub">Fill out physical stock form or 3-step wizard</div>
-                        <div class="card-action-tag">Open Form <i class="fa-solid fa-pen-to-square"></i></div>
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- System Settings & Demo Tools Modal -->
-    <div id="modal-settings" class="modal-overlay">
-        <div class="modal-card modal-md">
-            <div class="modal-header">
-                <h3><i class="fa-solid fa-gear"></i> <span data-i18n="settings_title">System Settings & Data Tools</span></h3>
-                <button class="modal-close" id="btn-close-settings-modal">&times;</button>
-            </div>
-            <div class="modal-body">
-                <p class="panel-desc" data-i18n="settings_desc">Configure application parameters or load demonstration datasets for evaluation.</p>
-
-                <div class="panel" style="margin-top: 1rem; padding: 1rem; border: 1px solid var(--color-border); background: var(--color-surface-alt);">
-                    <h4 style="margin-bottom: 0.5rem; color: var(--color-primary);"><i class="fa-solid fa-flask"></i> <span data-i18n="demo_data_heading">Demonstration Benchmark Dataset</span></h4>
-                    <p style="font-size: 0.875rem; margin-bottom: 1rem;" data-i18n="demo_data_desc">Load the official 24-hour hackathon benchmark dataset featuring Centre A shortage (60 stock, 6 days remaining) and Centre C safe surplus (140 transfer capacity).</p>
-                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-                        <button type="button" id="btn-load-demo-modal" class="btn btn-primary">
-                            <i class="fa-solid fa-play"></i> <span data-i18n="btn_load_demo_confirm">Load Demo Scenario Data</span>
-                        </button>
-                        <button type="button" id="btn-reset-modal" class="btn btn-outline">
-                            <i class="fa-solid fa-rotate-left"></i> <span data-i18n="btn_reset_storage">Clear Local Storage & Reset</span>
-                        </button>
-                    </div>
-                </div>
-
-                <div class="form-actions" style="margin-top: 1.5rem;">
-                    <button type="button" class="btn btn-outline" id="btn-cancel-settings">Close</button>
-                </div>
+            <div class="modal-footer">
+                <button id="btn-cancel-confirm" class="btn btn-outline" data-i18n="btn_cancel">Cancel</button>
+                <button id="btn-action-confirm" class="btn btn-primary" data-i18n="btn_confirm">Confirm</button>
             </div>
         </div>
     </div>
 
     <!-- Toast Notification Container -->
-    <div id="toast-container" class="toast-container"></div>
+    <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
     <script src="script.js"></script>
 </body>
-
 </html>

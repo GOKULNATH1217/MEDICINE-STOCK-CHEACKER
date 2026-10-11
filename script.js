@@ -2,12 +2,11 @@
  * ============================================================================
  * MEDI-CARE: PHC MEDICINE STOCK-OUT EARLY WARNING & REDISTRIBUTION ENGINE
  * ============================================================================
- * ACCESSIBLE, GUIDED, BARCODE & VOICE ENGINE
  * Pitch: "Count the days, then look sideways before you look up."
  * ============================================================================
  */
 
-// --- Global Date, Security & Connectivity Helpers ---
+// --- Global Helpers & Date Formatting ---
 
 function toLocalISO(d) {
     const date = d || new Date();
@@ -62,11 +61,9 @@ function getDaysUntilExpiry(expiryDateStr) {
 
 function formatDate(dateStr) {
     if (!dateStr) return 'N/A';
-    const parts = String(dateStr).split('-');
-    if (parts.length === 3) {
-        return `${parts[2]}/${parts[1]}/${parts[0]}`;
-    }
-    return dateStr;
+    const loc = currentLanguage === 'ta' ? 'ta-IN' : 'en-IN';
+    const parsed = parseLocalDate(dateStr);
+    return parsed.toLocaleDateString(loc, { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 function esc(s) {
@@ -80,14 +77,310 @@ function esc(s) {
     }[c]));
 }
 
+// --- Active State Variables ---
 let leadTimeDays = 10;
 let voiceAssistantEnabled = false;
 let isSimpleModeActive = false;
 let selectedVoiceLanguage = 'ta-IN';
 let activeSpeechRecognition = null;
+let isDemoDataLoaded = false;
 
 let currentLanguage = localStorage.getItem('medicare_site_lang') || 'en';
 let currentTheme = localStorage.getItem('medicare_theme') || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+
+// --- Distance Matrix & Display Names ---
+const distanceMatrix = {
+    'Centre A': { 'Centre A': 0, 'Centre B': 15, 'Centre C': 9, 'Centre D': 22 },
+    'Centre B': { 'Centre A': 15, 'Centre B': 0, 'Centre C': 12, 'Centre D': 8 },
+    'Centre C': { 'Centre A': 9, 'Centre B': 12, 'Centre C': 0, 'Centre D': 18 },
+    'Centre D': { 'Centre A': 22, 'Centre B': 8, 'Centre C': 18, 'Centre D': 0 }
+};
+
+const centreNames = {
+    'Centre A': 'Centre A (PHC Alpha - Rampur)',
+    'Centre B': 'Centre B (PHC Beta - Sundarpur)',
+    'Centre C': 'Centre C (PHC Gamma - Chandanpur)',
+    'Centre D': 'Centre D (PHC Delta - Krishnapur)'
+};
+
+const centreNamesTa = {
+    'Centre A': 'மையம் A (PHC ஆல்ப-ராம்பூர்)',
+    'Centre B': 'மையம் B (PHC பீட்டா-சுந்தர்பூர்)',
+    'Centre C': 'மையம் C (PHC காமா-சந்தன்பூர்)',
+    'Centre D': 'மையம் D (PHC டெல்டா-கிருஷ்ணாபூர்)'
+};
+
+const medicineNamesTa = {
+    'Paracetamol Syrup (100ml)': 'பாராசிட்டமால் சிரப் (100 மி.லி)',
+    'Amoxicillin 500mg Capsules': 'அமாக்சிசிலின் 500 மிகிராம் கேப்சூல்கள்',
+    'ORS Electrolyte Packets': 'ORS எலக்ட்ரோலைட் பாக்கெட்டுகள்',
+    'Metformin 500mg Tablets': 'மெட்ஃபார்மின் 500 மிகிராம் மாத்திரைகள்',
+    'Amlodipine 5mg Tablets': 'ஆம்லோடிபைன் 5 மிகிராம் மாத்திரைகள்',
+    'Artemether Injection (80mg)': 'ஆர்டெமிதர் ஊசி (80 மிகிராம்)',
+    'Ciprofloxacin 500mg Tablets': 'சிப்ரோஃப்ளோக்சசின் 500 மிகிராம் மாத்திரைகள்',
+    'Azithromycin 500mg Tablets': 'அசித்ரோமைசின் 500 மிகிராம் மாத்திரைகள்'
+};
+
+const barcodeCatalogue = {
+    '8901234567890': { medicineName: 'Paracetamol Syrup (100ml)', unit: '100ml', defaultDailyUse: 8, targetDays: 30 },
+    '8901234567891': { medicineName: 'Amoxicillin 500mg Capsules', unit: 'Capsules', defaultDailyUse: 15, targetDays: 30 },
+    '8901234567892': { medicineName: 'ORS Electrolyte Packets', unit: 'Packets', defaultDailyUse: 12, targetDays: 30 },
+    '8901234567893': { medicineName: 'Metformin 500mg Tablets', unit: 'Tablets', defaultDailyUse: 10, targetDays: 30 },
+    '8901234567894': { medicineName: 'Amlodipine 5mg Tablets', unit: 'Tablets', defaultDailyUse: 7, targetDays: 30 },
+    '8901234567895': { medicineName: 'Artemether Injection (80mg)', unit: 'Vials', defaultDailyUse: 3, targetDays: 30 },
+    '8901234567896': { medicineName: 'Ciprofloxacin 500mg Tablets', unit: 'Tablets', defaultDailyUse: 5, targetDays: 30 },
+    '8901234567897': { medicineName: 'Azithromycin 500mg Tablets', unit: 'Tablets', defaultDailyUse: 4, targetDays: 30 }
+};
+
+// Initial Seed Data
+const initialInventorySeed = [
+    { id: 'INV-001', centreId: 'Centre A', medicineName: 'Paracetamol Syrup (100ml)', currentStock: 40, dailyConsumption: 8, targetCoverageDays: 30, lastUpdated: getPastDateString(2), lastTransferAt: null },
+    { id: 'INV-002', centreId: 'Centre B', medicineName: 'Paracetamol Syrup (100ml)', currentStock: 250, dailyConsumption: 5, targetCoverageDays: 30, lastUpdated: getPastDateString(1), lastTransferAt: null },
+    { id: 'INV-003', centreId: 'Centre C', medicineName: 'Paracetamol Syrup (100ml)', currentStock: 180, dailyConsumption: 3, targetCoverageDays: 30, lastUpdated: getPastDateString(0), lastTransferAt: null },
+    { id: 'INV-004', centreId: 'Centre A', medicineName: 'Amoxicillin 500mg Capsules', currentStock: 120, dailyConsumption: 15, targetCoverageDays: 30, lastUpdated: getPastDateString(18), lastTransferAt: null },
+    { id: 'INV-005', centreId: 'Centre B', medicineName: 'Amoxicillin 500mg Capsules', currentStock: 500, dailyConsumption: 10, targetCoverageDays: 30, lastUpdated: getPastDateString(3), lastTransferAt: null },
+    { id: 'INV-006', centreId: 'Centre C', medicineName: 'ORS Electrolyte Packets', currentStock: 50, dailyConsumption: 12, targetCoverageDays: 30, lastUpdated: getPastDateString(1), lastTransferAt: null },
+    { id: 'INV-007', centreId: 'Centre D', medicineName: 'ORS Electrolyte Packets', currentStock: 450, dailyConsumption: 6, targetCoverageDays: 30, lastUpdated: getPastDateString(0), lastTransferAt: null },
+    { id: 'INV-008', centreId: 'Centre A', medicineName: 'Metformin 500mg Tablets', currentStock: 300, dailyConsumption: 0, targetCoverageDays: 30, lastUpdated: getPastDateString(4), lastTransferAt: null },
+    { id: 'INV-009', centreId: 'Centre D', medicineName: 'Amlodipine 5mg Tablets', currentStock: 60, dailyConsumption: 7, targetCoverageDays: 30, lastUpdated: getPastDateString(2), lastTransferAt: null },
+    { id: 'INV-010', centreId: 'Centre B', medicineName: 'Artemether Injection (80mg)', currentStock: 90, dailyConsumption: 3, targetCoverageDays: 30, lastUpdated: getPastDateString(5), lastTransferAt: null }
+];
+
+const initialBatchSeed = [
+    { id: 'BAT-001', batchNumber: 'BATCH-2025-P01', centreId: 'Centre A', medicineName: 'Paracetamol Syrup (100ml)', quantity: 40, expiryDate: getFutureDateString(120) },
+    { id: 'BAT-002', batchNumber: 'BATCH-2025-P02', centreId: 'Centre B', medicineName: 'Paracetamol Syrup (100ml)', quantity: 250, expiryDate: getFutureDateString(200) },
+    { id: 'BAT-003', batchNumber: 'BATCH-2025-A99', centreId: 'Centre A', medicineName: 'Amoxicillin 500mg Capsules', quantity: 30, expiryDate: getPastDateString(10) },
+    { id: 'BAT-004', batchNumber: 'BATCH-2026-O15', centreId: 'Centre C', medicineName: 'ORS Electrolyte Packets', quantity: 50, expiryDate: getFutureDateString(35) }
+];
+
+// Persistent State Loaders
+function loadSavedInventory() {
+    const saved = localStorage.getItem('medicare_inventory_state');
+    if (saved) {
+        try { return JSON.parse(saved); } catch (e) {}
+    }
+    return JSON.parse(JSON.stringify(initialInventorySeed));
+}
+
+function loadSavedBatches() {
+    const saved = localStorage.getItem('medicare_batch_state');
+    if (saved) {
+        try { return JSON.parse(saved); } catch (e) {}
+    }
+    return JSON.parse(JSON.stringify(initialBatchSeed));
+}
+
+function loadSavedPendingRequests() {
+    const saved = localStorage.getItem('medicare_pending_requests');
+    if (saved) {
+        try { return JSON.parse(saved); } catch (e) {}
+    }
+    return [];
+}
+
+function loadSavedAuditLog() {
+    const saved = localStorage.getItem('medicare_audit_log');
+    if (saved) {
+        try { return JSON.parse(saved); } catch (e) {}
+    }
+    return [];
+}
+
+function loadSavedSyncQueue() {
+    const saved = localStorage.getItem('medicare_sync_queue');
+    if (saved) {
+        try { return JSON.parse(saved); } catch (e) {}
+    }
+    return [];
+}
+
+let inventoryState = loadSavedInventory();
+let batchState = loadSavedBatches();
+let pendingRequestsState = loadSavedPendingRequests();
+let auditLogState = loadSavedAuditLog();
+let syncQueueState = loadSavedSyncQueue();
+
+function saveStateToStorage() {
+    try {
+        localStorage.setItem('medicare_inventory_state', JSON.stringify(inventoryState));
+        localStorage.setItem('medicare_batch_state', JSON.stringify(batchState));
+        localStorage.setItem('medicare_pending_requests', JSON.stringify(pendingRequestsState));
+        localStorage.setItem('medicare_audit_log', JSON.stringify(auditLogState));
+        localStorage.setItem('medicare_sync_queue', JSON.stringify(syncQueueState));
+    } catch (e) {
+        console.error('Storage quota error', e);
+        showToast('Storage Limit Reached: Could not save state to browser storage.', 'error');
+    }
+}
+
+function logAuditAction(action, officer, route, medicine, qty, note = '') {
+    const entry = {
+        id: `AUD-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        timestamp: `${toLocalISO(new Date())} ${new Date().toLocaleTimeString('en-GB')}`,
+        action,
+        officer: officer || 'System',
+        route,
+        medicine,
+        qty,
+        note: note || 'N/A'
+    };
+    auditLogState.unshift(entry);
+    saveStateToStorage();
+}
+
+function calculateStockoutDate(daysRemaining) {
+    if (!isFinite(daysRemaining) || isNaN(daysRemaining) || daysRemaining < 0) {
+        return currentLanguage === 'ta' ? 'அபாயமில்லை (0 பயன்பாடு)' : 'No Risk (0 Use)';
+    }
+    if (daysRemaining === 0) {
+        return currentLanguage === 'ta' ? 'இன்றே தீர்ந்துவிட்டது' : 'OUT OF STOCK TODAY';
+    }
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() + Math.floor(daysRemaining));
+    const loc = currentLanguage === 'ta' ? 'ta-IN' : 'en-IN';
+    return d.toLocaleDateString(loc, { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+// --- Outbox Sync Queue Module ---
+const OutboxQueue = {
+    getQueue() {
+        try {
+            return JSON.parse(localStorage.getItem('medicare_sync_queue') || '[]');
+        } catch (e) {
+            return [];
+        }
+    },
+    saveQueue(queue) {
+        try {
+            localStorage.setItem('medicare_sync_queue', JSON.stringify(queue));
+            syncQueueState = queue;
+        } catch (e) {}
+    },
+    enqueue(type, payload) {
+        const queue = this.getQueue();
+        const record = {
+            id: `SYNC-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+            type,
+            payload,
+            createdAt: new Date().toISOString(),
+            deviceId: 'DEV-PHC-01',
+            attempts: 0,
+            status: 'pending'
+        };
+        queue.push(record);
+        this.saveQueue(queue);
+        updateNetworkStatus();
+        this.flush();
+        return record;
+    },
+    async flush() {
+        const isOnline = await checkRealConnectivity();
+        if (!isOnline) return;
+
+        const queue = this.getQueue();
+        const pending = queue.filter(r => r.status === 'pending');
+        if (pending.length === 0) return;
+
+        let changed = false;
+        for (const record of pending) {
+            record.attempts++;
+            const result = syncAdapter.send(record);
+            if (result.success) {
+                record.status = 'synced';
+                changed = true;
+            } else if (result.needsReview) {
+                record.status = 'needs_review';
+                changed = true;
+                showToast(`Conflict detected for record ${record.id}. Sent for Medical Officer review.`, 'warning');
+            } else {
+                record.status = 'failed';
+                changed = true;
+            }
+        }
+        if (changed) {
+            this.saveQueue(queue);
+            updateNetworkStatus();
+            renderSyncStatusPanel();
+        }
+    }
+};
+
+const syncAdapter = {
+    send(record) {
+        let serverDb = {};
+        try {
+            serverDb = JSON.parse(localStorage.getItem('medicare_mock_server_db') || '{}');
+        } catch (e) {}
+
+        const key = `rec_${record.type}_${record.payload.id || record.id}`;
+
+        if (record.type === 'TRANSFER_APPROVE') {
+            const { donor, recipient, medicine, qty } = record.payload;
+            const donorItem = inventoryState.find(i => i.centreId === donor && i.medicineName === medicine);
+            if (!donorItem || donorItem.currentStock < qty) {
+                return { success: false, needsReview: true };
+            }
+        }
+
+        serverDb[key] = { ...record, syncedAt: new Date().toISOString() };
+        try {
+            localStorage.setItem('medicare_mock_server_db', JSON.stringify(serverDb));
+        } catch (e) {}
+
+        return { success: true };
+    }
+};
+
+let isRealOnline = navigator.onLine;
+let lastSyncedTime = new Date();
+
+async function checkRealConnectivity() {
+    if (!navigator.onLine) {
+        isRealOnline = false;
+        return false;
+    }
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
+        const res = await fetch(`./ping.txt?t=${Date.now()}`, { cache: 'no-store', signal: controller.signal });
+        clearTimeout(timeoutId);
+        isRealOnline = res.ok;
+        if (res.ok) lastSyncedTime = new Date();
+        return res.ok;
+    } catch (e) {
+        isRealOnline = false;
+        return false;
+    }
+}
+
+function updateNetworkStatus() {
+    const pill = document.getElementById('status-offline');
+    const lbl = document.getElementById('lbl-network');
+    const queue = OutboxQueue.getQueue();
+    const pendingCount = queue.filter(r => r.status === 'pending').length;
+
+    if (!pill || !lbl) return;
+
+    const formattedTime = lastSyncedTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    if (!isRealOnline) {
+        pill.className = 'network-pill offline';
+        lbl.textContent = currentLanguage === 'ta' 
+            ? `ஆஃப்லைன் (${pendingCount} சேமிக்கப்பட்டது)` 
+            : `Offline (${pendingCount} pending)`;
+    } else if (pendingCount > 0) {
+        pill.className = 'network-pill syncing';
+        lbl.textContent = currentLanguage === 'ta' 
+            ? `இணைக்கப்படுகிறது (${pendingCount})` 
+            : `Syncing (${pendingCount})`;
+    } else {
+        pill.className = 'network-pill online';
+        lbl.textContent = currentLanguage === 'ta' 
+            ? `ஆன்லைன் (${formattedTime})` 
+            : `Online (Synced ${formattedTime})`;
+    }
+}
 
 // Centralized Translation Dictionary (English & Tamil)
 const i18n = {
@@ -106,20 +399,20 @@ const i18n = {
         settings: "Settings",
         add_update_stock: "Add / Update Stock",
         choice_subtitle: "Select how you want to add medicine stock to the inventory:",
-        btn_scan_barcode: "Scan Barcode (பார்கோடு)",
-        choice_scan_sub: "Use live camera to scan medicine GTIN barcode",
-        btn_enter_manually: "Enter Manually (கைமுறையாக)",
+        btn_scan_barcode: "Scan Barcode",
+        choice_scan_sub: "Use camera to scan medicine GTIN barcode",
+        btn_enter_manually: "Enter Manually",
         choice_manual_sub: "Fill out physical stock form or 3-step wizard",
         settings_title: "System Settings & Data Tools",
         settings_desc: "Configure application parameters or load demonstration datasets for evaluation.",
         demo_data_heading: "Demonstration Benchmark Dataset",
-        demo_data_desc: "Load the official 24-hour hackathon benchmark dataset featuring Centre A shortage (60 stock, 6 days remaining) and Centre C safe surplus (140 transfer capacity).",
+        demo_data_desc: "Load the official hackathon benchmark dataset featuring Centre A shortage (60 stock, 6 days remaining) and Centre C safe surplus (140 transfer capacity).",
         btn_load_demo_confirm: "Load Demo Scenario Data",
         btn_reset_storage: "Clear Local Storage & Reset",
         btn_cancel: "Cancel",
         btn_confirm: "Confirm",
         voice_help_text: "Speak medicine names or quantities in Tamil or English to fill stock entries hands-free with mandatory confirmation.",
-        btn_start_voice: "Start Speaking (பேசுக)",
+        btn_start_voice: "Start Speaking",
         btn_stop_voice: "Stop",
         btn_replay_voice: "Repeat Guidance",
         toast_demo_loaded: "Demo scenario data loaded successfully.",
@@ -127,7 +420,32 @@ const i18n = {
         toast_transfer_requested: "Transfer request submitted for approval.",
         toast_transfer_approved: "Transfer approved and executed successfully!",
         toast_transfer_rejected: "Transfer request rejected.",
-        toast_camera_stopped: "Camera stopped."
+        toast_camera_stopped: "Camera stopped.",
+        tab_overview: "Overview",
+        tab_transfers: "Transfers",
+        tab_approvals: "Approvals",
+        tab_inventory: "Inventory",
+        tab_batches: "Batches",
+        tab_network: "Network",
+        tab_simulator: "Simulator",
+        tab_voice: "Voice",
+        step1_predict: "1. Predict Days Left",
+        step2_sideways: "2. Look Sideways (Surplus)",
+        step3_district: "3. Then Look Up (District)",
+        kpi_critical: "Critical Shortage",
+        kpi_transfers: "Transfers Recommended",
+        kpi_district: "District Order Needed",
+        kpi_approvals: "Pending MO Approvals",
+        section_alerts_title: "Active Stock Alert Cards (Action Required)",
+        section_transfers_title: "Recommended Inter-PHC Stock Transfers",
+        section_district_title: "District Supply Procurement Requirements",
+        sync_status_heading: "Offline Sync Outbox",
+        btn_sync_now: "Sync Now",
+        status_critical: "CRITICAL",
+        status_warning: "WARNING",
+        status_safe: "SAFE",
+        status_outdated: "OUTDATED",
+        status_topup: "TOP-UP"
     },
     ta: {
         app_title: "MEDI-CARE (மேடி-கேர்)",
@@ -157,7 +475,7 @@ const i18n = {
         btn_cancel: "ரத்து செய்",
         btn_confirm: "உறுதி செய்",
         voice_help_text: "மருந்து பெயர்கள் அல்லது எண்ணிக்கையை தமிழ் அல்லது ஆங்கிலத்தில் கூறி இருப்பை உள்ளிடுக. இறுதி உறுதிப்படுத்தல் கட்டாயமாகும்.",
-        btn_start_voice: "பேசத் தொடங்கு (பேசுக)",
+        btn_start_voice: "பேசத் தொடங்கு",
         btn_stop_voice: "நிறுத்து",
         btn_replay_voice: "மீண்டும் கேள்",
         toast_demo_loaded: "மாதிரி தரவு வெற்றிகரமாக ஏற்றப்பட்டது.",
@@ -165,24 +483,52 @@ const i18n = {
         toast_transfer_requested: "மருந்து மாற்றக் கோரிக்கை சமர்ப்பிக்கப்பட்டது.",
         toast_transfer_approved: "மருந்து மாற்றம் ஒப்புதல் அளிக்கப்பட்டு செயல்படுத்தப்பட்டது!",
         toast_transfer_rejected: "மருந்து மாற்றக் கோரிக்கை நிராகரிக்கப்பட்டது.",
-        toast_camera_stopped: "கேமரா நிறுத்தப்பட்டது."
+        toast_camera_stopped: "கேமரா நிறுத்தப்பட்டது.",
+        tab_overview: "மேலோட்டம்",
+        tab_transfers: "மருந்து மாற்றங்கள்",
+        tab_approvals: "ஒப்புதல்கள்",
+        tab_inventory: "இருப்பு விவரம்",
+        tab_batches: "தொகுப்புகள்",
+        tab_network: "நிலையங்கள்",
+        tab_simulator: "மாதிரி சோதனையகம்",
+        tab_voice: "குரல் உதவி",
+        step1_predict: "1. நாட்களை கணித்தல்",
+        step2_sideways: "2. அருகிலுள்ள PHC (மேலதிக இருப்பு)",
+        step3_district: "3. மாவட்ட கோரிக்கை",
+        kpi_critical: "அவசர பற்றாக்குறை",
+        kpi_transfers: "பரிந்துரைக்கப்பட்ட மாற்றங்கள்",
+        kpi_district: "மாவட்ட ஆர்டர் தேவை",
+        kpi_approvals: "காத்திருக்கும் ஒப்புதல்கள்",
+        section_alerts_title: "செயலில் உள்ள எச்சரிக்கை கார்டுகள்",
+        section_transfers_title: "பரிந்துரைக்கப்பட்ட PHC மருந்து மாற்றங்கள்",
+        section_district_title: "மாவட்ட மருந்து கொள்முதல் தேவைகள்",
+        sync_status_heading: "ஆஃப்லைன் ஒத்திசைவு வரிசை",
+        btn_sync_now: "இப்போதே ஒத்திசை",
+        status_critical: "அவசரம்",
+        status_warning: "எச்சரிக்கை",
+        status_safe: "பாதுகாப்பு",
+        status_outdated: "பழைய பதிவு",
+        status_topup: "இருப்பு ஈடுசெய்தல்"
     }
 };
 
-function t(key) {
-    if (i18n[currentLanguage] && i18n[currentLanguage][key]) {
-        return i18n[currentLanguage][key];
-    }
-    if (i18n['en'] && i18n['en'][key]) {
-        return i18n['en'][key];
-    }
-    return key;
+function t(key, params = {}) {
+    let str = (i18n[currentLanguage] && i18n[currentLanguage][key])
+        ? i18n[currentLanguage][key]
+        : (i18n['en'][key] || key);
+
+    Object.keys(params).forEach(p => {
+        str = str.replace(new RegExp(`\\{${p}\\}`, 'g'), params[p]);
+    });
+    return str;
 }
 
 function setLanguage(lang) {
     if (lang !== 'en' && lang !== 'ta') lang = 'en';
     currentLanguage = lang;
     localStorage.setItem('medicare_site_lang', lang);
+
+    document.documentElement.setAttribute('lang', lang);
 
     const selSiteLang = document.getElementById('select-site-lang');
     if (selSiteLang) selSiteLang.value = lang;
@@ -198,7 +544,40 @@ function setLanguage(lang) {
         }
     });
 
-    setTheme(currentTheme);
+    document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+        const k = el.getAttribute('data-i18n-placeholder');
+        if (k && i18n[lang] && i18n[lang][k]) {
+            el.placeholder = i18n[lang][k];
+        }
+    });
+
+    const lblMode = document.getElementById('lbl-mode');
+    if (lblMode) lblMode.textContent = isSimpleModeActive ? t('simple_mode_on') : t('simple_mode_off');
+
+    const lblVoice = document.getElementById('lbl-voice');
+    if (lblVoice) lblVoice.textContent = voiceAssistantEnabled ? (currentLanguage === 'ta' ? 'குரல்: இயக்கத்தில்' : 'Voice: ON') : t('voice_off');
+
+    const lblTheme = document.getElementById('lbl-theme');
+    if (lblTheme) lblTheme.textContent = currentTheme === 'dark' ? t('theme_light') : t('theme_dark');
+
+    renderDashboard();
+    updateNetworkStatus();
+
+    if (window.location.search.includes('i18ncheck')) {
+        runI18nDevCheck();
+    }
+}
+
+function runI18nDevCheck() {
+    console.log('=== MEDI-CARE I18N DEV CHECK ===');
+    const enKeys = Object.keys(i18n.en);
+    const taKeys = Object.keys(i18n.ta);
+    const missingInTa = enKeys.filter(k => !taKeys.includes(k));
+    if (missingInTa.length > 0) {
+        console.warn('Missing Tamil keys:', missingInTa);
+    } else {
+        console.log('All English keys present in Tamil dictionary.');
+    }
 }
 
 function setTheme(theme) {
@@ -208,300 +587,19 @@ function setTheme(theme) {
     localStorage.setItem('medicare_theme', theme);
 
     const lblTheme = document.getElementById('lbl-theme');
-    const btnTheme = document.getElementById('btn-toggle-theme');
-    if (lblTheme) {
-        lblTheme.textContent = theme === 'dark' 
-            ? (currentLanguage === 'ta' ? 'வெளிச்ச முறைமை' : 'Light Mode')
-            : (currentLanguage === 'ta' ? 'இருண்ட முறைமை' : 'Dark Mode');
-    }
-    if (btnTheme && typeof btnTheme.querySelector === 'function') {
-        const icon = btnTheme.querySelector('i');
-        if (icon) {
-            icon.className = theme === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
-        }
-    }
+    if (lblTheme) lblTheme.textContent = theme === 'dark' ? t('theme_light') : t('theme_dark');
 }
 
 function toggleTheme() {
     setTheme(currentTheme === 'dark' ? 'light' : 'dark');
 }
 
-// Symmetric Distance Matrix (km)
-const distanceMatrix = {
-    'Centre A': { 'Centre A': 0, 'Centre B': 15, 'Centre C': 9, 'Centre D': 22 },
-    'Centre B': { 'Centre A': 15, 'Centre B': 0, 'Centre C': 12, 'Centre D': 8 },
-    'Centre C': { 'Centre A': 9, 'Centre B': 12, 'Centre C': 0, 'Centre D': 18 },
-    'Centre D': { 'Centre A': 22, 'Centre B': 8, 'Centre C': 18, 'Centre D': 0 }
-};
-
-// PHC Full Names
-const centreNames = {
-    'Centre A': 'Centre A (PHC Alpha - Rampur)',
-    'Centre B': 'Centre B (PHC Beta - Sundarpur)',
-    'Centre C': 'Centre C (PHC Gamma - Chandanpur)',
-    'Centre D': 'Centre D (PHC Delta - Krishnapur)'
-};
-
-// Verified Medicine Barcode Catalogue Mapping (GTIN / EAN-13 -> Medicine Info)
-const barcodeCatalogue = {
-    '8901234567890': { medicineName: 'Paracetamol Syrup (100ml)', unit: '100ml', defaultDailyUse: 8, targetDays: 30 },
-    '8901234567891': { medicineName: 'Amoxicillin 500mg Capsules', unit: 'Capsules', defaultDailyUse: 15, targetDays: 30 },
-    '8901234567892': { medicineName: 'ORS Electrolyte Packets', unit: 'Packets', defaultDailyUse: 12, targetDays: 30 },
-    '8901234567893': { medicineName: 'Metformin 500mg Tablets', unit: 'Tablets', defaultDailyUse: 10, targetDays: 30 },
-    '8901234567894': { medicineName: 'Amlodipine 5mg Tablets', unit: 'Tablets', defaultDailyUse: 7, targetDays: 30 },
-    '8901234567895': { medicineName: 'Artemether Injection (80mg)', unit: 'Vials', defaultDailyUse: 3, targetDays: 30 },
-    '8901234567896': { medicineName: 'Ciprofloxacin 500mg Tablets', unit: 'Tablets', defaultDailyUse: 5, targetDays: 30 },
-    '8901234567897': { medicineName: 'Azithromycin 500mg Tablets', unit: 'Tablets', defaultDailyUse: 4, targetDays: 30 }
-};
-
-// Initial Seed Data (Simulated Fictional Data)
-const initialInventorySeed = [
-    {
-        id: 'INV-001',
-        centreId: 'Centre A',
-        medicineName: 'Paracetamol Syrup (100ml)',
-        currentStock: 40,
-        dailyConsumption: 8,
-        targetCoverageDays: 30,
-        lastUpdated: getPastDateString(2),
-        lastTransferAt: null
-    },
-    {
-        id: 'INV-002',
-        centreId: 'Centre B',
-        medicineName: 'Paracetamol Syrup (100ml)',
-        currentStock: 250,
-        dailyConsumption: 5,
-        targetCoverageDays: 30,
-        lastUpdated: getPastDateString(1),
-        lastTransferAt: null
-    },
-    {
-        id: 'INV-003',
-        centreId: 'Centre C',
-        medicineName: 'Paracetamol Syrup (100ml)',
-        currentStock: 180,
-        dailyConsumption: 3,
-        targetCoverageDays: 30,
-        lastUpdated: getPastDateString(0),
-        lastTransferAt: null
-    },
-    {
-        id: 'INV-004',
-        centreId: 'Centre A',
-        medicineName: 'Amoxicillin 500mg Capsules',
-        currentStock: 120,
-        dailyConsumption: 15,
-        targetCoverageDays: 30,
-        lastUpdated: getPastDateString(18),
-        lastTransferAt: null
-    },
-    {
-        id: 'INV-005',
-        centreId: 'Centre B',
-        medicineName: 'Amoxicillin 500mg Capsules',
-        currentStock: 500,
-        dailyConsumption: 10,
-        targetCoverageDays: 30,
-        lastUpdated: getPastDateString(3),
-        lastTransferAt: null
-    },
-    {
-        id: 'INV-006',
-        centreId: 'Centre C',
-        medicineName: 'ORS Electrolyte Packets',
-        currentStock: 50,
-        dailyConsumption: 12,
-        targetCoverageDays: 30,
-        lastUpdated: getPastDateString(1),
-        lastTransferAt: null
-    },
-    {
-        id: 'INV-007',
-        centreId: 'Centre D',
-        medicineName: 'ORS Electrolyte Packets',
-        currentStock: 450,
-        dailyConsumption: 6,
-        targetCoverageDays: 30,
-        lastUpdated: getPastDateString(0),
-        lastTransferAt: null
-    },
-    {
-        id: 'INV-008',
-        centreId: 'Centre A',
-        medicineName: 'Metformin 500mg Tablets',
-        currentStock: 300,
-        dailyConsumption: 0,
-        targetCoverageDays: 30,
-        lastUpdated: getPastDateString(4),
-        lastTransferAt: null
-    },
-    {
-        id: 'INV-009',
-        centreId: 'Centre D',
-        medicineName: 'Amlodipine 5mg Tablets',
-        currentStock: 60,
-        dailyConsumption: 7,
-        targetCoverageDays: 30,
-        lastUpdated: getPastDateString(2),
-        lastTransferAt: null
-    },
-    {
-        id: 'INV-010',
-        centreId: 'Centre B',
-        medicineName: 'Amlodipine 5mg Tablets',
-        currentStock: 350,
-        dailyConsumption: 4,
-        targetCoverageDays: 30,
-        lastUpdated: getPastDateString(1),
-        lastTransferAt: null
-    },
-    {
-        id: 'INV-011',
-        centreId: 'Centre C',
-        medicineName: 'Artemether Injection (80mg)',
-        currentStock: 15,
-        dailyConsumption: 3,
-        targetCoverageDays: 30,
-        lastUpdated: getPastDateString(2),
-        lastTransferAt: null
-    },
-    {
-        id: 'INV-012',
-        centreId: 'Centre D',
-        medicineName: 'Artemether Injection (80mg)',
-        currentStock: 120,
-        dailyConsumption: 2,
-        targetCoverageDays: 30,
-        lastUpdated: getPastDateString(0),
-        lastTransferAt: null
-    }
-];
-
-// Initial Seed Data for Medicine Batches
-const initialBatchSeed = [
-    {
-        id: 'BAT-001',
-        batchNumber: 'BATCH-2026-P01',
-        centreId: 'Centre A',
-        medicineName: 'Paracetamol Syrup (100ml)',
-        quantity: 40,
-        expiryDate: getFutureDateString(180)
-    },
-    {
-        id: 'BAT-002',
-        batchNumber: 'BATCH-2026-P02',
-        centreId: 'Centre C',
-        medicineName: 'Paracetamol Syrup (100ml)',
-        quantity: 180,
-        expiryDate: getFutureDateString(240)
-    },
-    {
-        id: 'BAT-003',
-        batchNumber: 'BATCH-2025-A99',
-        centreId: 'Centre A',
-        medicineName: 'Amoxicillin 500mg Capsules',
-        quantity: 30,
-        expiryDate: getPastDateString(10)
-    },
-    {
-        id: 'BAT-004',
-        batchNumber: 'BATCH-2026-O15',
-        centreId: 'Centre C',
-        medicineName: 'ORS Electrolyte Packets',
-        quantity: 50,
-        expiryDate: getFutureDateString(35)
-    }
-];
-
-// Persistent State Loaders
-function loadSavedInventory() {
-    const saved = localStorage.getItem('medicare_inventory_state') || localStorage.getItem('aushadhi_inventory_state');
-    if (saved) {
-        try { return JSON.parse(saved); } catch (e) { console.error('Error parsing saved inventory', e); }
-    }
-    return JSON.parse(JSON.stringify(initialInventorySeed));
-}
-
-function loadSavedBatches() {
-    const saved = localStorage.getItem('medicare_batch_state') || localStorage.getItem('aushadhi_batch_state');
-    if (saved) {
-        try { return JSON.parse(saved); } catch (e) { console.error('Error parsing saved batches', e); }
-    }
-    return JSON.parse(JSON.stringify(initialBatchSeed));
-}
-
-function loadSavedPendingRequests() {
-    const saved = localStorage.getItem('medicare_pending_requests');
-    if (saved) {
-        try { return JSON.parse(saved); } catch (e) { console.error('Error parsing pending requests', e); }
-    }
-    return [];
-}
-
-function loadSavedAuditLog() {
-    const saved = localStorage.getItem('medicare_audit_log');
-    if (saved) {
-        try { return JSON.parse(saved); } catch (e) { console.error('Error parsing audit log', e); }
-    }
-    return [];
-}
-
-function loadSavedSyncQueue() {
-    const saved = localStorage.getItem('medicare_sync_queue');
-    if (saved) {
-        try { return JSON.parse(saved); } catch (e) { console.error('Error parsing sync queue', e); }
-    }
-    return [];
-}
-
-// Active Application State
-let inventoryState = loadSavedInventory();
-let batchState = loadSavedBatches();
-let pendingRequestsState = loadSavedPendingRequests();
-let auditLogState = loadSavedAuditLog();
-let syncQueueState = loadSavedSyncQueue();
-
-function saveStateToStorage() {
-    localStorage.setItem('medicare_inventory_state', JSON.stringify(inventoryState));
-    localStorage.setItem('medicare_batch_state', JSON.stringify(batchState));
-    localStorage.setItem('medicare_pending_requests', JSON.stringify(pendingRequestsState));
-    localStorage.setItem('medicare_audit_log', JSON.stringify(auditLogState));
-    localStorage.setItem('medicare_sync_queue', JSON.stringify(syncQueueState));
-}
-
-function logAuditAction(action, officer, route, medicine, qty, note = '') {
-    const entry = {
-        id: `AUD-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-        timestamp: `${toLocalISO(new Date())} ${new Date().toLocaleTimeString('en-GB')}`,
-        action,
-        officer: officer || 'System',
-        route,
-        medicine,
-        qty,
-        note: note || 'N/A'
-    };
-    auditLogState.unshift(entry);
-    saveStateToStorage();
-}
-
-function calculateStockoutDate(daysRemaining) {
-    if (!isFinite(daysRemaining) || isNaN(daysRemaining) || daysRemaining < 0) {
-        return 'No Risk (0 Use)';
-    }
-    if (daysRemaining === 0) {
-        return 'OUT OF STOCK TODAY';
-    }
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    d.setDate(d.getDate() + Math.floor(daysRemaining));
-    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-}
+// --- Forecast & Redistribution Engine (Core Formulas Preserved) ---
 
 function getItemBatchAnalysis(centreId, medicineName) {
     const matchingBatches = batchState.filter(b =>
         b.centreId === centreId &&
-        b.medicineName.toLowerCase() === medicineName.toLowerCase()
+        b.medicineName.toLowerCase().trim() === medicineName.toLowerCase().trim()
     );
 
     let validBatchQty = 0;
@@ -523,33 +621,119 @@ function getItemBatchAnalysis(centreId, medicineName) {
     return { matchingBatches, validBatchQty, expiredQty, nearExpiryQty };
 }
 
-function generatePlainLanguageExplanation(item) {
-    const daysSinceUpdate = getDaysSince(item.lastUpdated);
-    const isOutdated = daysSinceUpdate > 14 || daysSinceUpdate < 0;
-    const { expiredQty } = getItemBatchAnalysis(item.centreId, item.medicineName);
-    const usableStock = Math.max(0, item.currentStock - expiredQty);
+function getMedicineUnitNoun(medicineName) {
+    if (!medicineName) return { en: 'units', ta: 'அலகுகள்' };
+    const nameLower = medicineName.toLowerCase();
+    const catEntry = Object.values(barcodeCatalogue).find(c => c.medicineName.toLowerCase() === nameLower);
+    let u = catEntry ? catEntry.unit.toLowerCase() : '';
 
-    let daysRemaining;
-    if (item.dailyConsumption <= 0) daysRemaining = Infinity;
-    else if (usableStock === 0) daysRemaining = 0;
-    else daysRemaining = usableStock / item.dailyConsumption;
+    if (u.includes('capsule') || nameLower.includes('capsule')) return { en: 'capsules', ta: 'கேப்சூல்கள்' };
+    if (u.includes('packet') || nameLower.includes('packet') || nameLower.includes('ors')) return { en: 'packets', ta: 'பாக்கெட்டுகள்' };
+    if (u.includes('vial') || nameLower.includes('injection') || nameLower.includes('vial')) return { en: 'vials', ta: 'வயல்கள்' };
+    if (u.includes('bottle') || u.includes('100ml') || nameLower.includes('syrup') || nameLower.includes('100ml')) return { en: 'bottles', ta: 'பாட்டில்கள்' };
+    return { en: 'tablets', ta: 'மாத்திரைகள்' };
+}
 
-    if (isOutdated) {
-        return `Record for ${item.medicineName} at ${item.centreId} was updated ${daysSinceUpdate} days ago. A physical audit is recommended.`;
+// Phase 3: Single explainAlert function returning { en, ta } sentences <= 25 words
+function explainAlert(item, context = null) {
+    const medNameEn = item.medicineName;
+    const medNameTa = medicineNamesTa[item.medicineName] || item.medicineName;
+    const centreNameEn = item.centreId;
+    const centreNameTa = centreNamesTa[item.centreId] || item.centreId;
+    const unit = getMedicineUnitNoun(item.medicineName);
+
+    const daysSince = item.daysSinceUpdate;
+    if (item.isOutdated) {
+        return {
+            en: `The ${medNameEn} count at ${centreNameEn} is ${daysSince} days old. Please count the stock and update it.`,
+            ta: `${centreNameTa}-இல் ${medNameTa} எண்ணிக்கை ${daysSince} நாட்களுக்கு முந்தையது. இருப்பை எண்ணி புதுப்பிக்கவும்.`
+        };
     }
-    if (usableStock === 0 && item.dailyConsumption > 0) {
-        return `${item.medicineName} is out of stock at ${item.centreId}. Replenishment is required immediately.`;
+
+    let suggestedTransfer = null;
+    let districtReq = null;
+    if (context) {
+        if (context.suggestedTransfers) {
+            suggestedTransfer = context.suggestedTransfers.find(t => t.recipientCentre === item.centreId && t.medicineName === item.medicineName);
+        }
+        if (context.districtRequirements) {
+            districtReq = context.districtRequirements.find(d => d.centreId === item.centreId && d.medicineName === item.medicineName);
+        }
     }
-    if (daysRemaining <= leadTimeDays) {
-        return `This medicine may run out in ${daysRemaining.toFixed(1)} days at ${item.centreId}, so arrange replenishment.`;
+
+    const { expiredQty, nearExpiryQty } = getItemBatchAnalysis(item.centreId, item.medicineName);
+    const daysLeft = item.daysRemaining;
+    const daysStr = daysLeft === Infinity ? '30+' : daysLeft.toFixed(1);
+
+    if (item.usableStock === 0 && item.dailyConsumption > 0) {
+        if (suggestedTransfer) {
+            const donorTa = centreNamesTa[suggestedTransfer.donorCentre] || suggestedTransfer.donorCentre;
+            return {
+                en: `${medNameEn} is finished at ${centreNameEn}. Ask ${suggestedTransfer.donorCentre} (${suggestedTransfer.distanceKm} km away) for ${suggestedTransfer.transferQty} ${unit.en} today.`,
+                ta: `${centreNameTa}-இல் ${medNameTa} தீர்ந்துவிட்டது. இன்றே ${donorTa}-இடம் (${suggestedTransfer.distanceKm} கிமீ) ${suggestedTransfer.transferQty} ${unit.ta} கேளுங்கள்.`
+            };
+        } else if (districtReq) {
+            return {
+                en: `${medNameEn} is finished at ${centreNameEn}. Request ${districtReq.remainingDistrictReq} ${unit.en} from the district immediately.`,
+                ta: `${centreNameTa}-இல் ${medNameTa} தீர்ந்துவிட்டது. உடனடியாக மாவட்டத்திடம் ${districtReq.remainingDistrictReq} ${unit.ta} கோருங்கள்.`
+            };
+        }
+        return {
+            en: `${medNameEn} is finished at ${centreNameEn}. Replenishment is required immediately.`,
+            ta: `${centreNameTa}-இல் ${medNameTa} தீர்ந்துவிட்டது. உடனடியாக புதிய இருப்பு தேவை.`
+        };
     }
-    if (daysRemaining <= leadTimeDays * 1.5) {
-        return `Stock for ${item.medicineName} covers ${daysRemaining.toFixed(1)} days. Reorder recommended soon.`;
+
+    if (daysLeft <= leadTimeDays) {
+        if (suggestedTransfer && districtReq && districtReq.remainingDistrictReq > 0) {
+            const donorTa = centreNamesTa[suggestedTransfer.donorCentre] || suggestedTransfer.donorCentre;
+            return {
+                en: `${medNameEn} at ${centreNameEn} will run out in ${daysStr} days. Ask ${suggestedTransfer.donorCentre} (${suggestedTransfer.distanceKm} km away) for ${suggestedTransfer.transferQty} ${unit.en}, then request the other ${districtReq.remainingDistrictReq} from the district.`,
+                ta: `${centreNameTa}-இல் ${medNameTa} ${daysStr} நாட்களில் தீர்ந்துவிடும். ${donorTa}-இடமிருந்து (${suggestedTransfer.distanceKm} கிமீ) ${suggestedTransfer.transferQty} ${unit.ta} கேளுங்கள்; மீதமுள்ள ${districtReq.remainingDistrictReq}-ஐ மாவட்டத்திடம் கோருங்கள்.`
+            };
+        } else if (suggestedTransfer) {
+            const donorTa = centreNamesTa[suggestedTransfer.donorCentre] || suggestedTransfer.donorCentre;
+            return {
+                en: `${medNameEn} at ${centreNameEn} will run out in ${daysStr} days. Ask ${suggestedTransfer.donorCentre} (${suggestedTransfer.distanceKm} km away) for ${suggestedTransfer.transferQty} ${unit.en}.`,
+                ta: `${centreNameTa}-இல் ${medNameTa} ${daysStr} நாட்களில் தீர்ந்துவிடும். ${donorTa}-இடமிருந்து (${suggestedTransfer.distanceKm} கிமீ) ${suggestedTransfer.transferQty} ${unit.ta} கேளுங்கள்.`
+            };
+        } else if (districtReq) {
+            return {
+                en: `${medNameEn} at ${centreNameEn} will run out in ${daysStr} days. Request ${districtReq.remainingDistrictReq} ${unit.en} from the district.`,
+                ta: `${centreNameTa}-இல் ${medNameTa} ${daysStr} நாட்களில் தீர்ந்துவிடும். மாவட்டத்திடம் ${districtReq.remainingDistrictReq} ${unit.ta} கோருங்கள்.`
+            };
+        }
+        return {
+            en: `${medNameEn} at ${centreNameEn} will run out in ${daysStr} days. Please arrange replenishment.`,
+            ta: `${centreNameTa}-இல் ${medNameTa} ${daysStr} நாட்களில் தீர்ந்துவிடும். புதிய இருப்புக்கு ஏற்பாடு செய்யுங்கள்.`
+        };
     }
+
     if (expiredQty > 0) {
-        return `${expiredQty} units of ${item.medicineName} have expired and are excluded from usable stock.`;
+        return {
+            en: `${centreNameEn} has ${expiredQty} expired ${unit.en} of ${medNameEn}. Remove expired stock and audit.`,
+            ta: `${centreNameTa}-இல் ${expiredQty} காலாவதியான ${medNameTa} ${unit.ta} உள்ளன. அவற்றை அகற்றி சரிபார்க்கவும்.`
+        };
     }
-    return `Stock for ${item.medicineName} covers ${daysRemaining.toFixed(1)} days safely exceeding ${leadTimeDays} days lead time.`;
+
+    if (nearExpiryQty > 0) {
+        return {
+            en: `${centreNameEn} has ${nearExpiryQty} ${unit.en} of ${medNameEn} expiring soon. Dispense these batches first.`,
+            ta: `${centreNameTa}-இல் ${nearExpiryQty} ${unit.ta} ${medNameTa} விரைவில் காலாவதியாகும். இந்த தொகுப்புகளை முதலில் வழங்கவும்.`
+        };
+    }
+
+    if (daysLeft <= leadTimeDays * 1.5 || item.shortfall > 0) {
+        return {
+            en: `${medNameEn} stock at ${centreNameEn} covers ${daysStr} days. Plan replenishment soon to maintain safe stock.`,
+            ta: `${centreNameTa}-இல் ${medNameTa} இருப்பு ${daysStr} நாட்களுக்கு உள்ளது. பாதுகாப்பான இருப்பை பராமரிக்க விரைவில் திட்டமிடுங்கள்.`
+        };
+    }
+
+    return {
+        en: `${medNameEn} stock at ${centreNameEn} safely covers ${daysStr} days.`,
+        ta: `${centreNameTa}-இல் ${medNameTa} இருப்பு ${daysStr} நாட்களுக்கு பாதுகாப்பாக உள்ளது.`
+    };
 }
 
 function processForecastItem(item) {
@@ -576,8 +760,6 @@ function processForecastItem(item) {
     const donorSurplus = isOutdated ? 0 : rawSurplus;
 
     let status = 'SAFE';
-    let riskReason = generatePlainLanguageExplanation(item);
-
     if (isOutdated) {
         status = 'OUTDATED';
     } else if (usableStock === 0 && item.dailyConsumption > 0) {
@@ -590,6 +772,8 @@ function processForecastItem(item) {
         status = 'SAFE';
     }
 
+    const alertObj = explainAlert({ ...item, usableStock, daysRemaining, daysSinceUpdate, isOutdated, shortfall });
+
     return {
         ...item,
         usableStock,
@@ -600,102 +784,86 @@ function processForecastItem(item) {
         isOutdated,
         targetStock,
         shortfall,
-        safetyStock,
-        donorSurplus,
         rawSurplus,
+        donorSurplus,
         status,
-        riskReason,
-        stockoutDate: calculateStockoutDate(daysRemaining)
+        riskReason: alertObj.en,
+        alertObj
     };
 }
 
 function computeTransferImpact(donorCentre, recipientCentre, medicineName, qty) {
-    const processedAll = inventoryState.map(processForecastItem);
+    const donorItem = inventoryState.find(i => i.centreId === donorCentre && i.medicineName === medicineName);
+    const recipientItem = inventoryState.find(i => i.centreId === recipientCentre && i.medicineName === medicineName);
 
-    const recBefore = processedAll.find(i => i.centreId === recipientCentre && i.medicineName === medicineName) || {
-        centreId: recipientCentre,
-        medicineName: medicineName,
-        usableStock: 0,
-        currentStock: 0,
-        dailyConsumption: 5,
-        targetCoverageDays: 30,
-        daysRemaining: 0,
-        status: 'CRITICAL',
-        shortfall: 150,
-        isOutdated: false
-    };
+    if (!donorItem || !recipientItem) {
+        return {
+            donor: { centre: donorCentre, stockBefore: 0, stockAfter: 0, daysBefore: 0, daysAfter: 0, statusBefore: 'SAFE', statusAfter: 'SAFE', surplusBefore: 0, surplusAfter: 0 },
+            recipient: { centre: recipientCentre, stockBefore: 0, stockAfter: 0, daysBefore: 0, daysAfter: 0, statusBefore: 'CRITICAL', statusAfter: 'SAFE', shortfallBefore: 0, shortfallAfter: 0 }
+        };
+    }
 
-    const recAfterStock = recBefore.usableStock + qty;
-    const recAfterDays = recBefore.dailyConsumption > 0 ? recAfterStock / recBefore.dailyConsumption : Infinity;
-    const recTarget = recBefore.dailyConsumption * recBefore.targetCoverageDays;
-    const recAfterShortfall = Math.max(0, Math.round(recTarget - recAfterStock));
-    let recAfterStatus = 'SAFE';
-    if (recBefore.isOutdated) recAfterStatus = 'OUTDATED';
-    else if (recAfterStock === 0 && recBefore.dailyConsumption > 0) recAfterStatus = 'CRITICAL';
-    else if (recAfterDays <= leadTimeDays) recAfterStatus = 'CRITICAL';
-    else if (recAfterDays <= leadTimeDays * 1.5) recAfterStatus = 'WARNING';
+    const donorP = processForecastItem(donorItem);
+    const recipP = processForecastItem(recipientItem);
 
-    const donorBefore = processedAll.find(i => i.centreId === donorCentre && i.medicineName === medicineName);
-    const donorAfterStock = donorBefore ? Math.max(0, donorBefore.usableStock - qty) : 0;
-    const donorAfterDays = (donorBefore && donorBefore.dailyConsumption > 0) ? donorAfterStock / donorBefore.dailyConsumption : Infinity;
-    const donorTarget = donorBefore ? donorBefore.dailyConsumption * donorBefore.targetCoverageDays : 0;
-    const donorAfterSurplus = Math.max(0, Math.round(donorAfterStock - donorTarget));
-    let donorAfterStatus = 'SAFE';
-    if (donorBefore && donorBefore.isOutdated) donorAfterStatus = 'OUTDATED';
-    else if (donorAfterStock === 0 && donorBefore && donorBefore.dailyConsumption > 0) donorAfterStatus = 'CRITICAL';
-    else if (donorAfterDays <= leadTimeDays) donorAfterStatus = 'CRITICAL';
-    else if (donorAfterDays <= leadTimeDays * 1.5) donorAfterStatus = 'WARNING';
+    const donorNewStock = Math.max(0, donorItem.currentStock - qty);
+    const recipNewStock = recipientItem.currentStock + qty;
+
+    const donorMockItem = { ...donorItem, currentStock: donorNewStock };
+    const recipMockItem = { ...recipientItem, currentStock: recipNewStock };
+
+    const donorAfter = processForecastItem(donorMockItem);
+    const recipAfter = processForecastItem(recipMockItem);
 
     return {
-        recipient: {
-            centre: recipientCentre,
-            isOutdated: recBefore.isOutdated,
-            stockBefore: recBefore.usableStock,
-            stockAfter: recAfterStock,
-            daysBefore: recBefore.daysRemaining,
-            daysAfter: recAfterDays,
-            statusBefore: recBefore.status,
-            statusAfter: recAfterStatus,
-            shortfallBefore: recBefore.shortfall,
-            shortfallAfter: recAfterShortfall
-        },
         donor: {
             centre: donorCentre,
-            isOutdated: donorBefore ? donorBefore.isOutdated : false,
-            stockBefore: donorBefore ? donorBefore.usableStock : 0,
-            stockAfter: donorAfterStock,
-            daysBefore: donorBefore ? donorBefore.daysRemaining : 0,
-            daysAfter: donorAfterDays,
-            statusBefore: donorBefore ? donorBefore.status : 'SAFE',
-            statusAfter: donorAfterStatus,
-            surplusBefore: donorBefore ? donorBefore.donorSurplus : 0,
-            surplusAfter: donorAfterSurplus
+            stockBefore: donorP.usableStock,
+            stockAfter: donorAfter.usableStock,
+            daysBefore: donorP.daysRemaining,
+            daysAfter: donorAfter.daysRemaining,
+            statusBefore: donorP.status,
+            statusAfter: donorAfter.status,
+            surplusBefore: donorP.donorSurplus,
+            surplusAfter: donorAfter.donorSurplus
+        },
+        recipient: {
+            centre: recipientCentre,
+            stockBefore: recipP.usableStock,
+            stockAfter: recipAfter.usableStock,
+            daysBefore: recipP.daysRemaining,
+            daysAfter: recipAfter.daysRemaining,
+            statusBefore: recipP.status,
+            statusAfter: recipAfter.status,
+            shortfallBefore: recipP.shortfall,
+            shortfallAfter: recipAfter.shortfall
         }
     };
 }
 
 function impactHtml(impact) {
     const formatDays = d => (d === Infinity ? 'Infinite' : `${d.toFixed(1)}d`);
-    const badgeClass = s => (s === 'CRITICAL' ? 'badge-critical' : (s === 'WARNING' ? 'badge-warning' : (s === 'OUTDATED' ? 'badge-outdated' : 'badge-safe')));
+    const recipName = currentLanguage === 'ta' ? (centreNamesTa[impact.recipient.centre] || impact.recipient.centre) : impact.recipient.centre;
+    const donorName = currentLanguage === 'ta' ? (centreNamesTa[impact.donor.centre] || impact.donor.centre) : impact.donor.centre;
 
     return `
-        <div class="impact-grid">
-            <div class="impact-card recipient-card">
-                <h5><i class="fa-solid fa-hospital-user"></i> Recipient: ${esc(impact.recipient.centre)}</h5>
-                <div class="impact-row"><span>Usable Stock:</span> <strong>${impact.recipient.stockBefore} → ${impact.recipient.stockAfter} units</strong></div>
-                <div class="impact-row"><span>Days Left:</span> <strong>${formatDays(impact.recipient.daysBefore)} → ${formatDays(impact.recipient.daysAfter)}</strong></div>
-                <div class="impact-row"><span>Status:</span> <div><span class="badge ${badgeClass(impact.recipient.statusBefore)}">${esc(impact.recipient.statusBefore)}</span> <i class="fa-solid fa-arrow-right"></i> <span class="badge ${badgeClass(impact.recipient.statusAfter)}">${esc(impact.recipient.statusAfter)}</span></div></div>
-                <div class="impact-row"><span>Shortfall:</span> <strong>${impact.recipient.shortfallBefore} → ${impact.recipient.shortfallAfter} units</strong></div>
-            </div>
-            <div class="impact-card donor-card">
-                <h5><i class="fa-solid fa-hand-holding-medical"></i> Donor: ${esc(impact.donor.centre)}</h5>
-                <div class="impact-row"><span>Usable Stock:</span> <strong>${impact.donor.stockBefore} → ${impact.donor.stockAfter} units</strong></div>
-                <div class="impact-row"><span>Days Left:</span> <strong>${formatDays(impact.donor.daysBefore)} → ${formatDays(impact.donor.daysAfter)}</strong></div>
-                <div class="impact-row"><span>Status:</span> <div><span class="badge ${badgeClass(impact.donor.statusBefore)}">${esc(impact.donor.statusBefore)}</span> <i class="fa-solid fa-arrow-right"></i> <span class="badge ${badgeClass(impact.donor.statusAfter)}">${esc(impact.donor.statusAfter)}</span></div></div>
-                <div class="impact-row"><span>Safe Surplus:</span> <strong>${impact.donor.surplusBefore} → ${impact.donor.surplusAfter} units</strong></div>
+        <div class="impact-card">
+            <div class="impact-title">${currentLanguage === 'ta' ? 'இரட்டை PHC தாக்கத்தின் கணிப்பு (Transfer Impact)' : 'Before & After Impact Analysis'}</div>
+            <div class="impact-grid">
+                <div class="impact-box recipient-box">
+                    <div class="impact-box-title">${currentLanguage === 'ta' ? 'பெறுநர் (Recipient)' : 'Recipient PHC'}: ${esc(recipName)}</div>
+                    <div class="impact-row"><span>${currentLanguage === 'ta' ? 'இருப்பு' : 'Usable Stock'}:</span> <strong>${impact.recipient.stockBefore} → ${impact.recipient.stockAfter}</strong></div>
+                    <div class="impact-row"><span>${currentLanguage === 'ta' ? 'நாட்கள்' : 'Days Covered'}:</span> <strong>${formatDays(impact.recipient.daysBefore)} → ${formatDays(impact.recipient.daysAfter)}</strong></div>
+                    <div class="impact-row"><span>${currentLanguage === 'ta' ? 'பற்றாக்குறை' : 'Shortfall'}:</span> <strong>${impact.recipient.shortfallBefore} → ${impact.recipient.shortfallAfter}</strong></div>
+                </div>
+                <div class="impact-box donor-box">
+                    <div class="impact-box-title">${currentLanguage === 'ta' ? 'வழங்குநர் (Donor)' : 'Donor PHC'}: ${esc(donorName)}</div>
+                    <div class="impact-row"><span>${currentLanguage === 'ta' ? 'இருப்பு' : 'Usable Stock'}:</span> <strong>${impact.donor.stockBefore} → ${impact.donor.stockAfter}</strong></div>
+                    <div class="impact-row"><span>${currentLanguage === 'ta' ? 'நாட்கள்' : 'Days Covered'}:</span> <strong>${formatDays(impact.donor.daysBefore)} → ${formatDays(impact.donor.daysAfter)}</strong></div>
+                    <div class="impact-row"><span>${currentLanguage === 'ta' ? 'மேலதிக இருப்பு' : 'Safe Surplus'}:</span> <strong>${impact.donor.surplusBefore} → ${impact.donor.surplusAfter}</strong></div>
+                </div>
             </div>
         </div>
-        ${impact.recipient.isOutdated ? `<div class="impact-warning-box"><i class="fa-solid fa-triangle-exclamation"></i> <strong>Physical Audit Warning:</strong> Recipient inventory record is >14 days old. A physical stock audit is recommended prior to transfer execution.</div>` : ''}
     `;
 }
 
@@ -753,10 +921,13 @@ function computeRedistribution(processedInventory) {
 
             const transferAmount = Math.min(neededQty, availableSurplus);
             const impact = computeTransferImpact(donorItem.centreId, recipient.centreId, recipient.medicineName, transferAmount);
-            const reasoning = `${donorItem.centreId} retains required safety stock. Available safe surplus: ${availableSurplus} units. Distance: ${distance} km.`;
+            const unit = getMedicineUnitNoun(recipient.medicineName);
+            const donorName = currentLanguage === 'ta' ? (centreNamesTa[donorItem.centreId] || donorItem.centreId) : donorItem.centreId;
+            const reasoning = `${donorName} keeps its own 30 days of stock and can spare ${availableSurplus} ${unit.en}. Distance: ${distance} km.`;
 
+            // Phase 1 bug fix: Use honest label TOP-UP when daysRemaining > leadTimeDays
             suggestedTransfers.push({
-                priority: recipient.isOutdated ? 'OUTDATED (Verify)' : (recipient.daysRemaining <= leadTimeDays ? 'CRITICAL' : 'WARNING'),
+                priority: recipient.isOutdated ? 'OUTDATED (Verify)' : (recipient.daysRemaining <= leadTimeDays ? 'CRITICAL' : 'TOP-UP'),
                 recipientCentre: recipient.centreId,
                 donorCentre: donorItem.centreId,
                 medicineName: recipient.medicineName,
@@ -799,1124 +970,371 @@ function executeApprovedTransfer(donorCentre, recipientCentre, medicineName, qty
         return false;
     }
 
-    if (inventoryState[donorIdx].currentStock < qty) {
-        showToast('Error: Donor PHC does not have enough physical stock to complete transfer.', 'error');
+    const donorItem = inventoryState[donorIdx];
+    const { validBatchQty } = getItemBatchAnalysis(donorCentre, medicineName);
+
+    if (donorItem.currentStock < qty || validBatchQty < qty) {
+        showToast(`Cannot execute transfer: Donor stock (${donorItem.currentStock}) or valid batch stock (${validBatchQty}) is less than transfer quantity (${qty}).`, 'error');
         return false;
     }
 
-    const { matchingBatches, validBatchQty } = getItemBatchAnalysis(donorCentre, medicineName);
-    if (matchingBatches.length > 0 && validBatchQty < qty) {
-        showToast(`Transfer rejected: Donor PHC has only ${validBatchQty} units in valid non-expired batches (requested ${qty} units).`, 'error');
-        return false;
-    }
-
-    const donorProcessed = processForecastItem(inventoryState[donorIdx]);
-    if (donorProcessed.donorSurplus < qty) {
-        showToast(`Warning: Re-validation check failed. Donor safe surplus is currently ${donorProcessed.donorSurplus} units.`, 'warning');
-        return false;
-    }
-
-    const todayIso = toLocalISO(new Date());
-
-    inventoryState[donorIdx].currentStock -= qty;
-    inventoryState[donorIdx].lastTransferAt = todayIso;
+    donorItem.currentStock -= qty;
+    donorItem.lastUpdated = toLocalISO(new Date());
+    donorItem.lastTransferAt = toLocalISO(new Date());
 
     if (recipientIdx >= 0) {
         inventoryState[recipientIdx].currentStock += qty;
-        inventoryState[recipientIdx].lastTransferAt = todayIso;
+        inventoryState[recipientIdx].lastUpdated = toLocalISO(new Date());
+        inventoryState[recipientIdx].lastTransferAt = toLocalISO(new Date());
     } else {
         inventoryState.push({
             id: `INV-${Date.now()}`,
             centreId: recipientCentre,
-            medicineName: medicineName,
+            medicineName,
             currentStock: qty,
-            dailyConsumption: inventoryState[donorIdx].dailyConsumption || 5,
-            targetCoverageDays: inventoryState[donorIdx].targetCoverageDays || 30,
-            lastUpdated: todayIso,
-            lastTransferAt: todayIso
+            dailyConsumption: donorItem.dailyConsumption || 5,
+            targetCoverageDays: 30,
+            lastUpdated: toLocalISO(new Date()),
+            lastTransferAt: toLocalISO(new Date())
         });
     }
 
-    let remainingToMove = qty;
-    const donorBatches = batchState.filter(b =>
-        b.centreId === donorCentre &&
-        b.medicineName.toLowerCase() === medicineName.toLowerCase() &&
-        getDaysUntilExpiry(b.expiryDate) >= 0
-    );
+    // Deduct quantity from donor non-expired batches
+    let remainingToDeduct = qty;
+    const donorBatches = batchState.filter(b => b.centreId === donorCentre && b.medicineName.toLowerCase() === medicineName.toLowerCase() && getDaysUntilExpiry(b.expiryDate) >= 0);
+    donorBatches.sort((a, b) => getDaysUntilExpiry(a.expiryDate) - getDaysUntilExpiry(b.expiryDate));
 
-    donorBatches.forEach(b => {
-        if (remainingToMove <= 0) return;
-        const moveQty = Math.min(b.quantity, remainingToMove);
-        b.quantity -= moveQty;
-        remainingToMove -= moveQty;
+    for (let b of donorBatches) {
+        if (remainingToDeduct <= 0) break;
+        if (b.quantity <= remainingToDeduct) {
+            remainingToDeduct -= b.quantity;
+            b.quantity = 0;
+        } else {
+            b.quantity -= remainingToDeduct;
+            remainingToDeduct = 0;
+        }
+    }
+    batchState = batchState.filter(b => b.quantity > 0);
 
-        batchState.push({
-            id: `BAT-XFER-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-            batchNumber: `${b.batchNumber}-XFER`,
-            centreId: recipientCentre,
-            medicineName: medicineName,
-            quantity: moveQty,
-            expiryDate: b.expiryDate
-        });
+    // Add new batch for recipient
+    batchState.push({
+        id: `BAT-${Date.now()}`,
+        batchNumber: `TRANS-${Math.floor(Math.random() * 10000)}`,
+        centreId: recipientCentre,
+        medicineName,
+        quantity: qty,
+        expiryDate: getFutureDateString(180)
     });
 
-    batchState = batchState.filter(b => b.quantity > 0);
     saveStateToStorage();
+    OutboxQueue.enqueue('TRANSFER_APPROVE', { donor: donorCentre, recipient: recipientCentre, medicine: medicineName, qty });
     return true;
 }
 
-// ============================================================================
-// PART B: ROBUST SPEECH SYNTHESIS & RECOGNITION ENGINE (Tamil & English)
-// ============================================================================
+// --- Dashboard Rendering ---
 
-let lastSpokenText = '';
+function renderDashboard() {
+    if (typeof document === 'undefined') return;
 
-function speakText(text, lang = selectedVoiceLanguage) {
-    if (!('speechSynthesis' in window)) {
-        showToast('Speech audio playback not supported on this browser.', 'info');
-        return;
-    }
+    const searchTerm = (document.getElementById('filter-search')?.value || '').toLowerCase().trim();
+    const selCentre = document.getElementById('filter-centre')?.value || 'ALL';
+    const selMed = document.getElementById('filter-medicine')?.value || 'ALL';
+    const selUrgency = document.getElementById('filter-urgency')?.value || 'ALL';
 
-    lastSpokenText = text;
-    window.speechSynthesis.cancel(); // Cancel any ongoing speech to avoid overlapping
+    const processedInventory = inventoryState.map(processForecastItem);
+    const redistribution = computeRedistribution(processedInventory);
 
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = lang;
-    utterance.rate = 0.95;
-
-    // Check available voices on device
-    const voices = window.speechSynthesis.getVoices();
-    if (lang.includes('ta')) {
-        const tamilVoice = voices.find(v => v.lang.includes('ta') || v.lang.includes('TA') || v.name.toLowerCase().includes('tamil'));
-        if (tamilVoice) utterance.voice = tamilVoice;
-    } else {
-        const engVoice = voices.find(v => v.lang.includes('en') || v.name.toLowerCase().includes('english'));
-        if (engVoice) utterance.voice = engVoice;
-    }
-
-    window.speechSynthesis.speak(utterance);
-}
-
-function stopSpeaking() {
-    if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-    }
-}
-
-// Parse spoken Tamil & English number words safely into numbers
-function parseSpokenNumber(text, lang = selectedVoiceLanguage) {
-    if (!text) return null;
-    const str = text.trim().toLowerCase();
-
-    // Check if numeric digits exist
-    const digitMatch = str.match(/\d+/);
-    if (digitMatch) return parseInt(digitMatch[0], 10);
-
-    // Number dictionary
-    const numMap = {
-        'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5, 'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
-        'twenty': 20, 'thirty': 30, 'forty': 40, 'fifty': 50, 'sixty': 60, 'hundred': 100,
-        'ஒன்று': 1, 'இரண்டு': 2, 'மூன்று': 3, 'நான்கு': 4, 'ஐந்து': 5, 'ஆறு': 6, 'ஏழு': 7, 'எட்டு': 8, 'ஒன்பது': 9, 'பத்து': 10,
-        'இருபது': 20, 'முப்பது': 30, 'நாற்பது': 40, 'ஐம்பது': 50, 'அறுபது': 60, 'நூறு': 100
-    };
-
-    for (const key in numMap) {
-        if (str.includes(key)) return numMap[key];
-    }
-    return null;
-}
-
-function setVoiceStateUI(stateText, stateClass = 'badge-pending') {
-    const indicator = document.getElementById('voice-status-indicator');
-    if (indicator) {
-        indicator.textContent = stateText;
-        indicator.className = `badge ${stateClass}`;
-    }
-}
-
-function startVoiceRecognition(onResultCallback) {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-        setVoiceStateUI('Unsupported', 'badge-rejected');
-        showToast('Speech recognition is not supported on this browser. Please type or click manually.', 'warning');
-        return;
-    }
-
-    if (activeSpeechRecognition) {
-        try { activeSpeechRecognition.stop(); } catch (e) {}
-    }
-
-    const recognition = new SpeechRecognition();
-    activeSpeechRecognition = recognition;
-
-    recognition.lang = selectedVoiceLanguage;
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-
-    const btnStart = document.getElementById('btn-start-voice');
-    const btnStop = document.getElementById('btn-stop-voice');
-    const transcriptBox = document.getElementById('voice-transcript-box');
-
-    if (btnStart) btnStart.style.display = 'none';
-    if (btnStop) btnStop.style.display = 'inline-flex';
-    if (transcriptBox) transcriptBox.style.display = 'block';
-
-    setVoiceStateUI('Listening...', 'badge-warning');
-
-    recognition.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
-        setVoiceStateUI('Processing', 'badge-approved');
-
-        if (transcriptBox) {
-            transcriptBox.innerHTML = `<i class="fa-solid fa-comment-dots"></i> Spoken Result: <strong>"${esc(transcript)}"</strong>`;
+    // Filtered inventory list for tables
+    const filteredInventory = processedInventory.filter(item => {
+        if (selCentre !== 'ALL' && item.centreId !== selCentre) return false;
+        if (selMed !== 'ALL' && item.medicineName !== selMed) return false;
+        if (selUrgency !== 'ALL' && item.status !== selUrgency) return false;
+        if (searchTerm) {
+            const matchesMed = item.medicineName.toLowerCase().includes(searchTerm);
+            const matchesCentre = item.centreId.toLowerCase().includes(searchTerm);
+            if (!matchesMed && !matchesCentre) return false;
         }
+        return true;
+    });
 
-        if (onResultCallback) onResultCallback(transcript);
-        stopVoiceRecognition();
-    };
+    renderKpiSummary(processedInventory, redistribution);
+    renderActiveAlertCards(processedInventory, redistribution);
+    renderRedistribution(redistribution);
+    renderPendingApprovals();
+    renderInventoryTable(filteredInventory, redistribution);
+    renderBatchTable();
+    renderAuditLogTable();
+    renderFacilityCards(processedInventory);
+    renderSimulator(processedInventory);
+    renderSimpleModeView(processedInventory, redistribution);
+    renderSyncStatusPanel();
+}
 
-    recognition.onerror = (event) => {
-        console.error('Speech recognition error:', event.error);
-        let errorMsg = `Speech error: ${event.error}`;
-        if (event.error === 'not-allowed') errorMsg = 'Microphone permission denied.';
-        if (event.error === 'no-speech') errorMsg = 'No speech detected. Please try speaking again.';
+function renderKpiSummary(processedInventory, redistribution) {
+    const criticalCount = processedInventory.filter(i => i.status === 'CRITICAL').length;
+    const transferCount = redistribution.suggestedTransfers.length;
+    const districtCount = redistribution.districtRequirements.length;
+    const pendingApprovalCount = pendingRequestsState.filter(r => r.status === 'PENDING').length;
 
-        setVoiceStateUI('Error', 'badge-rejected');
-        showToast(errorMsg, 'error');
-        stopVoiceRecognition();
-    };
+    const elCrit = document.getElementById('metric-critical');
+    if (elCrit) elCrit.textContent = criticalCount;
 
-    recognition.onend = () => {
-        stopVoiceRecognition();
-    };
+    const elTrans = document.getElementById('metric-transfers');
+    if (elTrans) elTrans.textContent = transferCount;
 
-    try {
-        recognition.start();
-    } catch (err) {
-        console.error('Recognition start error', err);
-        stopVoiceRecognition();
+    const elDist = document.getElementById('metric-district');
+    if (elDist) elDist.textContent = districtCount;
+
+    const elAppr = document.getElementById('metric-pending-approvals');
+    if (elAppr) elAppr.textContent = pendingApprovalCount;
+
+    // Badges on nav tabs
+    const badgeAppr = document.getElementById('nav-badge-approvals');
+    if (badgeAppr) {
+        badgeAppr.textContent = pendingApprovalCount;
+        badgeAppr.style.display = pendingApprovalCount > 0 ? 'inline-block' : 'none';
     }
 }
 
-function stopVoiceRecognition() {
-    if (activeSpeechRecognition) {
-        try { activeSpeechRecognition.stop(); } catch (e) {}
-        activeSpeechRecognition = null;
-    }
-
-    const btnStart = document.getElementById('btn-start-voice');
-    const btnStop = document.getElementById('btn-stop-voice');
-    if (btnStart) btnStart.style.display = 'inline-flex';
-    if (btnStop) btnStop.style.display = 'none';
-
-    const indicator = document.getElementById('voice-status-indicator');
-    if (indicator && indicator.textContent === 'Listening...') {
-        setVoiceStateUI('Idle', 'badge-pending');
-    }
-}
-
-// ============================================================================
-// PART C: REAL CAMERA BARCODE SCANNER ENGINE (BarcodeDetector + ZXing Fallback)
-// ============================================================================
-
-let activeMediaStream = null;
-let barcodeScannerInterval = null;
-let scannedSessionLock = false;
-
-async function startCameraScanner() {
-    const video = document.getElementById('barcode-video');
-    const statusBadge = document.getElementById('camera-status-badge');
-    const btnStopCam = document.getElementById('btn-stop-camera');
-    scannedSessionLock = false;
-
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        if (statusBadge) {
-            statusBadge.textContent = 'Camera Unavailable';
-            statusBadge.className = 'badge badge-rejected';
-        }
-        showToast('Camera API unavailable. Use manual barcode lookup below.', 'warning');
-        return;
-    }
-
-    try {
-        if (statusBadge) {
-            statusBadge.textContent = 'Requesting Camera...';
-            statusBadge.className = 'badge badge-warning';
-        }
-
-        const stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
-        });
-
-        activeMediaStream = stream;
-        video.srcObject = stream;
-        await video.play();
-
-        if (statusBadge) {
-            statusBadge.textContent = 'Camera Active (Scanning...)';
-            statusBadge.className = 'badge badge-approved';
-        }
-        if (btnStopCam) btnStopCam.style.display = 'inline-flex';
-
-        // Check if native BarcodeDetector is supported
-        if ('BarcodeDetector' in window) {
-            const detector = new window.BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128'] });
-            barcodeScannerInterval = setInterval(async () => {
-                if (scannedSessionLock || video.readyState < 2) return;
-                try {
-                    const barcodes = await detector.detect(video);
-                    if (barcodes.length > 0) {
-                        handleBarcodeDetected(barcodes[0].rawValue);
-                    }
-                } catch (e) { console.error('Native BarcodeDetector error', e); }
-            }, 300);
-        } else if (typeof ZXing !== 'undefined' && ZXing.BrowserMultiFormatReader) {
-            // ZXing JS Fallback
-            const codeReader = new ZXing.BrowserMultiFormatReader();
-            codeReader.decodeFromVideoDevice(null, 'barcode-video', (result, err) => {
-                if (result && !scannedSessionLock) {
-                    handleBarcodeDetected(result.getText());
-                }
-            });
-        } else {
-            // Simulated Frame Scanner timer for manual barcode testing
-            console.log('BarcodeDetector/ZXing fallback active. Manual lookup enabled.');
-        }
-
-    } catch (err) {
-        console.error('Camera permission/access error:', err);
-        if (statusBadge) {
-            statusBadge.textContent = 'Permission Denied / Error';
-            statusBadge.className = 'badge badge-rejected';
-        }
-        showToast('Camera access denied or unavailable. Please use manual barcode entry.', 'error');
-        stopCameraScanner();
-    }
-}
-
-function stopCameraScanner() {
-    if (barcodeScannerInterval) {
-        clearInterval(barcodeScannerInterval);
-        barcodeScannerInterval = null;
-    }
-
-    if (activeMediaStream) {
-        activeMediaStream.getTracks().forEach(track => {
-            track.stop();
-        });
-        activeMediaStream = null;
-    }
-
-    const video = document.getElementById('barcode-video');
-    if (video) video.srcObject = null;
-
-    const statusBadge = document.getElementById('camera-status-badge');
-    const btnStopCam = document.getElementById('btn-stop-camera');
-
-    if (statusBadge) {
-        statusBadge.textContent = 'Camera Stopped';
-        statusBadge.className = 'badge badge-pending';
-    }
-    if (btnStopCam) btnStopCam.style.display = 'none';
-}
-
-function handleBarcodeDetected(rawValue) {
-    if (scannedSessionLock) return;
-    scannedSessionLock = true;
-
-    const barcode = String(rawValue).trim();
-    const resultBox = document.getElementById('barcode-lookup-result');
-    if (resultBox) resultBox.style.display = 'block';
-
-    speakText(`Barcode ${barcode} detected.`);
-
-    if (barcodeCatalogue[barcode]) {
-        const item = barcodeCatalogue[barcode];
-        if (resultBox) {
-            resultBox.innerHTML = `
-                <div style="background:var(--color-safe-bg); border:2px solid var(--color-safe-border); padding:0.75rem; border-radius:6px; color:var(--color-text-main);">
-                    <i class="fa-solid fa-circle-check" style="color:var(--color-safe); font-size:1.1rem;"></i> <strong>Barcode Verified Match:</strong><br>
-                    <strong>${esc(item.medicineName)}</strong> (GTIN: <code>${esc(barcode)}</code>)<br>
-                    <small style="color:var(--color-text-muted);">Unit: ${esc(item.unit)} | Standard Usage: ${item.defaultDailyUse}/day</small><br>
-                    <div style="margin-top:0.5rem; display:flex; gap:0.5rem;">
-                        <button type="button" class="btn btn-success btn-sm" id="btn-apply-barcode-med">
-                            <i class="fa-solid fa-check"></i> Use Verified Medicine in Wizard
-                        </button>
-                    </div>
-                </div>
-            `;
-
-            const applyBtn = document.getElementById('btn-apply-barcode-med');
-            if (applyBtn) {
-                applyBtn.addEventListener('click', () => {
-                    document.getElementById('wizard-medicine').value = item.medicineName;
-                    stopCameraScanner();
-                    document.getElementById('modal-barcode-scanner').classList.remove('open');
-                    openSimpleWizardModal();
-                    showToast(`Barcode applied: ${item.medicineName}`, 'success');
-                });
-            }
-        }
-    } else {
-        if (resultBox) {
-            resultBox.innerHTML = `
-                <div style="background:var(--color-critical-bg); border:2px solid var(--color-critical-border); padding:0.75rem; border-radius:6px; color:var(--color-critical);">
-                    <i class="fa-solid fa-triangle-exclamation"></i> <strong>Unknown Barcode (${esc(barcode)})</strong><br>
-                    This code is not registered in the local catalogue. Please select or register medicine manually.
-                </div>
-            `;
-        }
-    }
-}
-
-// ============================================================================
-// PART D: OFFLINE OPERATIONAL CONNECTIVITY & SYNC QUEUE ENGINE
-// ============================================================================
-
-function updateNetworkStatus() {
-    const isOnline = (typeof navigator !== 'undefined' && 'onLine' in navigator) ? navigator.onLine : true;
-    const pill = document.getElementById('status-offline');
-    const lbl = document.getElementById('lbl-network');
-
-    if (!pill || !lbl) return;
-
-    if (isOnline) {
-        if (syncQueueState.length > 0) {
-            pill.className = 'network-pill syncing';
-            lbl.textContent = `Online (Syncing ${syncQueueState.length} items...)`;
-            flushSyncQueue();
-        } else {
-            pill.className = 'network-pill online';
-            lbl.textContent = 'Online (Synced)';
-        }
-    } else {
-        pill.className = 'network-pill offline';
-        lbl.textContent = `Offline (${syncQueueState.length} Pending Sync)`;
-    }
-}
-
-function flushSyncQueue() {
-    const isOnline = (typeof navigator !== 'undefined' && 'onLine' in navigator) ? navigator.onLine : true;
-    if (!isOnline || syncQueueState.length === 0) return;
-
-    let syncedCount = 0;
-    while (syncQueueState.length > 0) {
-        const item = syncQueueState.shift();
-        logAuditAction('Sync', 'Offline Engine', item.route || 'Local Queue', item.medicine || 'Batch Data', item.qty || 0, 'Synchronized pending offline entry');
-        syncedCount++;
-    }
-
-    saveStateToStorage();
-    updateNetworkStatus();
-    showToast(`⚡ Synchronized ${syncedCount} pending offline records to district network!`, 'success');
-}
-
-/**
- * Render Facility Risk Overview Cards
- */
-function renderFacilityRiskMatrix(processedInventory) {
-    const container = document.getElementById('facility-risk-container');
+function renderActiveAlertCards(processedInventory, redistribution) {
+    const container = document.getElementById('active-alerts-cards-container');
     if (!container) return;
 
-    const centres = Object.keys(centreNames);
-    container.innerHTML = '';
-
-    centres.forEach(centreId => {
-        const centreItems = processedInventory.filter(i => i.centreId === centreId);
-        const criticalItems = centreItems.filter(i => i.status === 'CRITICAL');
-        const warningItems = centreItems.filter(i => i.status === 'WARNING');
-        const totalShortfall = centreItems.reduce((acc, i) => acc + i.shortfall, 0);
-        const totalSurplus = centreItems.reduce((acc, i) => acc + i.donorSurplus, 0);
-
-        let riskBadgeClass = 'badge-safe';
-        let riskLabel = 'LOW RISK';
-
-        if (criticalItems.length > 0) {
-            riskBadgeClass = 'badge-critical';
-            riskLabel = 'HIGH RISK';
-        } else if (warningItems.length > 0) {
-            riskBadgeClass = 'badge-warning';
-            riskLabel = 'MODERATE RISK';
-        }
-
-        const card = document.createElement('div');
-        card.className = 'facility-card';
-        card.innerHTML = `
-            <div class="facility-card-header">
-                <div>
-                    <div class="facility-title">${esc(centreId)}</div>
-                    <div class="facility-sub">${esc(centreNames[centreId])}</div>
-                </div>
-                <span class="badge ${riskBadgeClass}">${esc(riskLabel)}</span>
-            </div>
-            <div class="facility-metrics">
-                <div class="facility-stat">
-                    <span class="facility-stat-label">Critical Items</span>
-                    <span class="facility-stat-val" style="color: ${criticalItems.length > 0 ? '#dc2626' : '#16a34a'};">${criticalItems.length}</span>
-                </div>
-                <div class="facility-stat">
-                    <span class="facility-stat-label">Shortfall Qty</span>
-                    <span class="facility-stat-val">${totalShortfall}</span>
-                </div>
-                <div class="facility-stat">
-                    <span class="facility-stat-label">Safe Surplus</span>
-                    <span class="facility-stat-val" style="color: #0284c7;">${totalSurplus}</span>
-                </div>
-                <div class="facility-stat">
-                    <span class="facility-stat-label">Items Tracked</span>
-                    <span class="facility-stat-val">${centreItems.length}</span>
-                </div>
-            </div>
-        `;
-        container.appendChild(card);
-    });
-}
-
-/**
- * Render What-If Supply Chain Simulator
- */
-function renderSimulator(processedInventory) {
-    const demandMult = parseFloat(document.getElementById('sim-demand-multiplier').value);
-    const delayDays = parseInt(document.getElementById('sim-delay-days').value, 10);
-    const shockPercent = parseInt(document.getElementById('sim-supply-shock').value, 10);
-    const assumeTransfers = document.getElementById('sim-assume-transfers').checked;
-
-    document.getElementById('val-demand-multiplier').textContent = `${demandMult.toFixed(1)}x`;
-    document.getElementById('val-delay-days').textContent = `+${delayDays} days`;
-    document.getElementById('val-supply-shock').textContent = `${shockPercent}%`;
-
-    const banner = document.getElementById('sim-impact-summary');
-    const tbody = document.getElementById('sim-tbody');
-    tbody.innerHTML = '';
-
-    const { suggestedTransfers } = computeRedistribution(processedInventory);
-    let simInventory = processedInventory.map(i => ({ ...i }));
-
-    if (assumeTransfers && suggestedTransfers.length > 0) {
-        suggestedTransfers.forEach(t => {
-            const recipient = simInventory.find(i => i.centreId === t.recipientCentre && i.medicineName === t.medicineName);
-            const donor = simInventory.find(i => i.centreId === t.donorCentre && i.medicineName === t.medicineName);
-            if (recipient) recipient.usableStock += t.transferQty;
-            if (donor) donor.usableStock = Math.max(0, donor.usableStock - t.transferQty);
-        });
-    }
-
-    simInventory.forEach(item => {
-        if (item.dailyConsumption <= 0) item.daysRemaining = Infinity;
-        else if (item.usableStock === 0) item.daysRemaining = 0;
-        else item.daysRemaining = item.usableStock / item.dailyConsumption;
-    });
-
-    const effectiveLeadTime = leadTimeDays + delayDays;
-    let simCriticalCount = 0;
-    let simTotalReq = 0;
-
-    simInventory.forEach(item => {
-        const simStock = Math.max(0, item.usableStock * (1 - shockPercent / 100));
-        const simCons = item.dailyConsumption * demandMult;
-
-        let simDaysLeft;
-        if (simCons <= 0) {
-            simDaysLeft = Infinity;
-        } else if (simStock === 0) {
-            simDaysLeft = 0;
-        } else {
-            simDaysLeft = simStock / simCons;
-        }
-
-        let simStatus = 'SAFE';
-        if (item.isOutdated) {
-            simStatus = 'OUTDATED';
-        } else if (simDaysLeft <= effectiveLeadTime) {
-            simStatus = 'CRITICAL';
-            simCriticalCount++;
-        } else if (simDaysLeft <= effectiveLeadTime * 1.5) {
-            simStatus = 'WARNING';
-        }
-
-        const simTarget = simCons * item.targetCoverageDays;
-        const simShortfall = Math.max(0, Math.round(simTarget - simStock));
-        if (simShortfall > 0) simTotalReq += simShortfall;
-
-        const simStockoutDate = calculateStockoutDate(simDaysLeft);
-
-        const baseDaysText = (item.daysRemaining === Infinity || item.daysRemaining === undefined || isNaN(item.daysRemaining)) ? 'Infinite' : `${item.daysRemaining.toFixed(1)}d`;
-        const simDaysText = (simDaysLeft === Infinity || isNaN(simDaysLeft)) ? 'Infinite' : `${simDaysLeft.toFixed(1)}d`;
-
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td><strong>${esc(item.centreId)}</strong></td>
-            <td><strong>${esc(item.medicineName)}</strong></td>
-            <td>${baseDaysText}</td>
-            <td><strong style="color: ${simDaysLeft <= effectiveLeadTime ? 'var(--color-critical)' : 'var(--color-text-main)'};">${simDaysText}</strong></td>
-            <td>${esc(simStockoutDate)}</td>
-            <td><span class="badge ${item.status === 'CRITICAL' ? 'badge-critical' : (item.status === 'WARNING' ? 'badge-warning' : (item.status === 'OUTDATED' ? 'badge-outdated' : 'badge-safe'))}">${esc(item.status)}</span></td>
-            <td><span class="badge ${simStatus === 'CRITICAL' ? 'badge-critical' : (simStatus === 'WARNING' ? 'badge-warning' : (simStatus === 'OUTDATED' ? 'badge-outdated' : 'badge-safe'))}">${esc(simStatus)}</span></td>
-            <td>${simShortfall > 0 ? `<strong style="color:var(--color-critical);">${simShortfall} units</strong>` : '0'}</td>
-        `;
-        tbody.appendChild(tr);
-    });
-
-    if (demandMult > 1.0 || delayDays > 0 || shockPercent > 0 || assumeTransfers) {
-        banner.className = 'sim-status-banner';
-        banner.style.backgroundColor = simCriticalCount > 0 ? 'var(--color-critical-bg)' : 'var(--color-safe-bg)';
-        banner.style.borderColor = simCriticalCount > 0 ? 'var(--color-critical-border)' : 'var(--color-safe-border)';
-        banner.style.color = simCriticalCount > 0 ? 'var(--color-critical)' : 'var(--color-safe)';
-        banner.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> <strong>Simulation Active:</strong> ${simCriticalCount} critical shortages projected (${assumeTransfers ? 'Transfers assumed pre-executed; ' : ''}+${simTotalReq} units district requirement under stress conditions).`;
-    } else {
-        banner.className = 'sim-status-banner';
-        banner.style.backgroundColor = 'var(--color-recipient-bg)';
-        banner.style.borderColor = 'var(--color-recipient-border)';
-        banner.style.color = 'var(--color-recipient-text)';
-        banner.innerHTML = `<i class="fa-solid fa-circle-check"></i> Baseline mode active. Adjust sliders or toggle transfer assumption above to stress test supply network.`;
-    }
-}
-
-function renderBatchTable() {
-    const tbody = document.getElementById('batch-tbody');
-    if (!tbody) return;
-    tbody.innerHTML = '';
-
-    if (batchState.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--color-text-muted); padding: 2rem;">No registered medicine batches found.</td></tr>`;
+    const alertItems = processedInventory.filter(i => i.status === 'CRITICAL' || i.status === 'WARNING' || i.status === 'OUTDATED');
+    if (alertItems.length === 0) {
+        container.innerHTML = `<div class="empty-state">${currentLanguage === 'ta' ? 'தற்போது அவசர எச்சரிக்கைகள் எதுவுமில்லை. அனைத்து PHC மருந்துகளும் பாதுகாப்பாக உள்ளன.' : 'No active critical alerts. All PHC stock levels are currently safe.'}</div>`;
         return;
     }
 
-    batchState.forEach(b => {
-        const daysLeft = getDaysUntilExpiry(b.expiryDate);
-        let badgeClass = 'badge-safe';
-        let statusLabel = 'USABLE (Valid)';
+    container.innerHTML = alertItems.map(item => {
+        const plainSentence = explainAlert(item, redistribution)[currentLanguage];
+        const statusLabel = t(`status_${item.status.toLowerCase()}`);
+        const cName = currentLanguage === 'ta' ? (centreNamesTa[item.centreId] || item.centreId) : item.centreId;
+        const mName = currentLanguage === 'ta' ? (medicineNamesTa[item.medicineName] || item.medicineName) : item.medicineName;
+        const pct = Math.min(100, Math.round((item.daysRemaining / (leadTimeDays * 3)) * 100));
 
-        if (daysLeft < 0) {
-            badgeClass = 'badge-expired';
-            statusLabel = `EXPIRED (${Math.abs(daysLeft)}d ago)`;
-        } else if (daysLeft <= 60) {
-            badgeClass = 'badge-near-expiry';
-            statusLabel = `NEAR EXPIRY (${daysLeft}d left)`;
-        }
-
-        const tr = document.createElement('tr');
-        if (daysLeft < 0) tr.className = 'row-expired';
-
-        tr.innerHTML = `
-            <td><code>${esc(b.batchNumber)}</code></td>
-            <td><strong>${esc(b.centreId)}</strong></td>
-            <td><strong>${esc(b.medicineName)}</strong></td>
-            <td><strong>${b.quantity} units</strong></td>
-            <td>${esc(formatDate(b.expiryDate))}</td>
-            <td>${daysLeft < 0 ? `<span style="color:var(--color-critical); font-weight:bold;">${daysLeft} days</span>` : `${daysLeft} days`}</td>
-            <td><span class="badge ${badgeClass}">${esc(statusLabel)}</span></td>
-            <td>
-                <button class="btn btn-danger btn-sm btn-delete-batch" data-id="${esc(b.id)}">
-                    <i class="fa-solid fa-trash"></i> Delete
-                </button>
-            </td>
-        `;
-        tbody.appendChild(tr);
-    });
-
-    document.querySelectorAll('.btn-delete-batch').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            const batchId = e.currentTarget.dataset.id;
-            showConfirmModal('Delete Batch Record', 'Are you sure you want to delete this batch record?', () => {
-                batchState = batchState.filter(b => b.id !== batchId);
-                saveStateToStorage();
-                renderDashboard();
-                showToast('Batch record deleted successfully.', 'info');
-            });
-        });
-    });
-}
-
-function renderPendingApprovalsAndAudit() {
-    const pendingTbody = document.getElementById('pending-tbody');
-    const auditTbody = document.getElementById('audit-tbody');
-    const pendingNavBadge = document.getElementById('pending-nav-badge');
-
-    const pendingList = pendingRequestsState.filter(r => r.status === 'PENDING');
-    if (pendingNavBadge) {
-        pendingNavBadge.textContent = pendingList.length;
-        pendingNavBadge.style.display = pendingList.length > 0 ? 'inline-block' : 'none';
-    }
-
-    if (pendingTbody) {
-        pendingTbody.innerHTML = '';
-        if (pendingList.length === 0) {
-            pendingTbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--color-safe); padding: 2rem;"><i class="fa-solid fa-circle-check"></i> No pending transfer requests requiring Medical Officer approval.</td></tr>`;
+        let actionBtn = '';
+        const hasTransfer = redistribution.suggestedTransfers.some(t => t.recipientCentre === item.centreId && t.medicineName === item.medicineName);
+        if (hasTransfer) {
+            actionBtn = `<button class="btn btn-primary btn-sm" onclick="switchTab('tab-transfers')">${currentLanguage === 'ta' ? 'மாற்றத்தை பரிசீலிக்கவும்' : 'Review Transfer'}</button>`;
+        } else if (item.isOutdated) {
+            actionBtn = `<button class="btn btn-outline btn-sm" onclick="switchTab('tab-inventory')">${currentLanguage === 'ta' ? 'இருப்பை புதுப்பிக்கவும்' : 'Audit Stock'}</button>`;
         } else {
-            pendingList.forEach(req => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td><strong>${esc(req.requestedAt)}</strong></td>
-                    <td>
-                        <div class="transfer-route-box">
-                            <span class="route-phc">${esc(req.donor)}</span>
-                            <span class="route-arrow"><i class="fa-solid fa-arrow-right"></i></span>
-                            <span class="route-phc">${esc(req.recipient)}</span>
-                        </div>
-                    </td>
-                    <td><strong>${esc(req.medicine)}</strong></td>
-                    <td><strong style="color:var(--color-accent); font-size: 0.95rem;">${req.qty} units</strong></td>
-                    <td>${impactCompactHtml(req.impact)}</td>
-                    <td><span class="badge badge-pending">Pending Approval</span></td>
-                    <td>
-                        <div style="display:flex; gap:0.4rem;">
-                            <button class="btn btn-success btn-sm btn-approve-req" data-id="${esc(req.id)}">
-                                <i class="fa-solid fa-user-check"></i> Approve
-                            </button>
-                            <button class="btn btn-danger btn-sm btn-reject-req" data-id="${esc(req.id)}">
-                                <i class="fa-solid fa-user-xmark"></i> Reject
-                            </button>
-                        </div>
-                    </td>
-                `;
-                pendingTbody.appendChild(tr);
-            });
-
-            document.querySelectorAll('.btn-approve-req').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    const reqId = e.currentTarget.dataset.id;
-                    const req = pendingRequestsState.find(r => r.id === reqId);
-                    if (req) openApproveModal(req);
-                });
-            });
-
-            document.querySelectorAll('.btn-reject-req').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    const reqId = e.currentTarget.dataset.id;
-                    const req = pendingRequestsState.find(r => r.id === reqId);
-                    if (req) openRejectModal(req);
-                });
-            });
+            actionBtn = `<button class="btn btn-outline btn-sm" onclick="switchTab('tab-transfers')">${currentLanguage === 'ta' ? 'மாவட்ட ஆர்டரை காண்க' : 'View District Req'}</button>`;
         }
-    }
 
-    if (auditTbody) {
-        auditTbody.innerHTML = '';
-        if (auditLogState.length === 0) {
-            auditTbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--color-text-muted); padding: 2rem;">No audit log records recorded yet.</td></tr>`;
-        } else {
-            auditLogState.forEach(log => {
-                let actionBadge = 'badge-safe';
-                if (log.action === 'Requested') actionBadge = 'badge-pending';
-                if (log.action === 'Approved') actionBadge = 'badge-approved';
-                if (log.action === 'Rejected' || log.action === 'Invalid') actionBadge = 'badge-rejected';
-
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td><code>${esc(log.timestamp)}</code></td>
-                    <td><span class="badge ${actionBadge}">${esc(log.action)}</span></td>
-                    <td><strong>${esc(log.officer)}</strong></td>
-                    <td><strong>${esc(log.route)}</strong></td>
-                    <td><strong>${esc(log.medicine)}</strong></td>
-                    <td>${log.qty} units</td>
-                    <td><small style="color:var(--color-text-muted);">${esc(log.note)}</small></td>
-                `;
-                auditTbody.appendChild(tr);
-            });
-        }
-    }
-}
-
-/**
- * Main UI Render Engine
- */
-function renderDashboard() {
-    const processedList = inventoryState.map(processForecastItem);
-
-    const searchVal = document.getElementById('filter-search').value.trim().toLowerCase();
-    const centreVal = document.getElementById('filter-centre').value;
-    const medVal = document.getElementById('filter-medicine').value;
-    const urgencyVal = document.getElementById('filter-urgency').value;
-
-    const filteredList = processedList.filter(item => {
-        const matchesSearch = item.centreId.toLowerCase().includes(searchVal) ||
-            item.medicineName.toLowerCase().includes(searchVal) ||
-            (centreNames[item.centreId] && centreNames[item.centreId].toLowerCase().includes(searchVal));
-        const matchesCentre = (centreVal === 'ALL' || item.centreId === centreVal);
-        const matchesMed = (medVal === 'ALL' || item.medicineName === medVal);
-        const matchesUrgency = (urgencyVal === 'ALL' || item.status === urgencyVal);
-
-        return matchesSearch && matchesCentre && matchesMed && matchesUrgency;
-    });
-
-    const { suggestedTransfers, districtRequirements } = computeRedistribution(processedList);
-
-    const uniqueCentres = new Set(processedList.map(i => i.centreId)).size;
-    const uniqueMeds = new Set(processedList.map(i => i.medicineName)).size;
-    const criticalCount = processedList.filter(i => i.status === 'CRITICAL').length;
-    const totalTransferUnits = suggestedTransfers.reduce((acc, t) => acc + t.transferQty, 0);
-    const pendingCount = pendingRequestsState.filter(r => r.status === 'PENDING').length;
-    const totalDistrictReqUnits = districtRequirements.reduce((acc, d) => acc + d.remainingDistrictReq, 0);
-
-    const expiredBatchesCount = batchState.filter(b => getDaysUntilExpiry(b.expiryDate) < 0).length;
-    const nearExpiryBatchesCount = batchState.filter(b => {
-        const d = getDaysUntilExpiry(b.expiryDate);
-        return d >= 0 && d <= 60;
-    }).length;
-
-    document.getElementById('metric-centres').textContent = uniqueCentres;
-    document.getElementById('metric-medicines').textContent = uniqueMeds;
-    document.getElementById('metric-critical').textContent = criticalCount;
-    document.getElementById('metric-transfers').textContent = suggestedTransfers.length;
-    document.getElementById('metric-transfer-units').textContent = `${totalTransferUnits} units total`;
-    document.getElementById('metric-pending-approvals').textContent = pendingCount;
-    document.getElementById('metric-district-req').textContent = totalDistrictReqUnits;
-    document.getElementById('metric-expired').textContent = expiredBatchesCount;
-    document.getElementById('metric-near-expiry').textContent = nearExpiryBatchesCount;
-
-    // Render Overview Table
-    const tbodyOverview = document.getElementById('overview-tbody');
-    tbodyOverview.innerHTML = '';
-    const needsAttentionItems = filteredList.filter(i => i.status === 'CRITICAL' || i.status === 'WARNING' || i.status === 'OUTDATED');
-    document.getElementById('needs-attention-count').textContent = `Showing ${filteredList.length} items (${needsAttentionItems.length} need action)`;
-
-    if (filteredList.length === 0) {
-        tbodyOverview.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--color-safe); padding: 2rem;"><i class="fa-solid fa-circle-check"></i> No matching medicine stock records found.</td></tr>`;
-    } else {
-        filteredList.forEach(item => {
-            const tr = document.createElement('tr');
-            if (item.status === 'CRITICAL') tr.className = 'row-critical';
-            if (item.status === 'OUTDATED') tr.className = 'row-outdated';
-
-            let badgeClass = item.status === 'CRITICAL' ? 'badge-critical' : (item.status === 'WARNING' ? 'badge-warning' : (item.status === 'OUTDATED' ? 'badge-outdated' : 'badge-safe'));
-            let actionText = item.status === 'CRITICAL' ? 'Execute Transfer / Order Stock' : (item.status === 'WARNING' ? 'Prepare Reorder' : (item.status === 'OUTDATED' ? 'Verify Physical Stock' : 'Stock Optimal'));
-
-            tr.innerHTML = `
-                <td><span class="badge ${badgeClass}">${esc(item.status)}</span></td>
-                <td><strong>${esc(item.centreId)}</strong> <br><small style="color:var(--color-text-muted);">${esc(centreNames[item.centreId] || '')}</small></td>
-                <td><strong>${esc(item.medicineName)}</strong></td>
-                <td><strong>${item.usableStock}</strong></td>
-                <td>${item.dailyConsumption} / day</td>
-                <td><strong>${item.daysRemaining === Infinity ? 'Infinite' : item.daysRemaining.toFixed(1) + 'd'}</strong></td>
-                <td>${esc(item.stockoutDate)}</td>
-                <td><small style="color:var(--color-text-muted);">${esc(item.riskReason)}</small></td>
-                <td>
-                    <button class="btn btn-outline btn-sm btn-speak-row" data-text="${esc(item.riskReason)}">
-                        <i class="fa-solid fa-volume-high"></i> ${esc(actionText)}
-                    </button>
-                </td>
-            `;
-            tbodyOverview.appendChild(tr);
-        });
-
-        document.querySelectorAll('.btn-speak-row').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const text = e.currentTarget.dataset.text;
-                speakText(text);
-            });
-        });
-    }
-
-    // Render Full Inventory Table
-    const tbodyInv = document.getElementById('inventory-tbody');
-    tbodyInv.innerHTML = '';
-    document.getElementById('inventory-count').textContent = `Showing ${filteredList.length} of ${processedList.length} items`;
-
-    if (filteredList.length === 0) {
-        tbodyInv.innerHTML = `<tr><td colspan="10" style="text-align: center; color: var(--color-text-muted); padding: 2rem;">No matching medicine stock records found.</td></tr>`;
-    } else {
-        filteredList.forEach(item => {
-            const tr = document.createElement('tr');
-            if (item.status === 'CRITICAL') tr.className = 'row-critical';
-            if (item.status === 'OUTDATED') tr.className = 'row-outdated';
-
-            let daysText = (item.daysRemaining === Infinity) ? 'Infinite (0 use)' : `${item.daysRemaining.toFixed(1)} days`;
-            let badgeClass = item.status === 'CRITICAL' ? 'badge-critical' : (item.status === 'WARNING' ? 'badge-warning' : (item.status === 'OUTDATED' ? 'badge-outdated' : 'badge-safe'));
-
-            tr.innerHTML = `
-                <td><strong>${esc(item.centreId)}</strong> <br><small style="color:var(--color-text-muted);">${esc(centreNames[item.centreId] || '')}</small></td>
-                <td><strong>${esc(item.medicineName)}</strong></td>
-                <td><strong>${item.usableStock}</strong> <br><small style="color:var(--color-text-muted);">(${item.currentStock} total)</small></td>
-                <td>${item.dailyConsumption} / day</td>
-                <td><strong>${daysText}</strong></td>
-                <td>${esc(item.stockoutDate)}</td>
-                <td>${item.targetCoverageDays}d (${item.targetStock} units)</td>
-                <td>${item.shortfall > 0 ? `<span style="color:var(--color-critical); font-weight:bold;">${item.shortfall} units</span>` : '<span style="color:var(--color-safe);">None</span>'}</td>
-                <td>
-                    <span class="badge ${badgeClass}">${esc(item.status)}</span>
-                    <br><small style="color:var(--color-text-muted); font-size: 0.725rem;">${esc(item.riskReason)}</small>
-                </td>
-                <td>
-                    <button class="btn btn-outline btn-sm btn-delete-item" data-id="${esc(item.id)}">
-                        <i class="fa-solid fa-trash"></i>
-                    </button>
-                </td>
-            `;
-            tbodyInv.appendChild(tr);
-        });
-
-        document.querySelectorAll('.btn-delete-item').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const itemId = e.currentTarget.dataset.id;
-                showConfirmModal('Delete Inventory Record', 'Are you sure you want to delete this inventory record?', () => {
-                    inventoryState = inventoryState.filter(i => i.id !== itemId);
-                    saveStateToStorage();
-                    renderDashboard();
-                    showToast('Inventory record deleted successfully.', 'info');
-                });
-            });
-        });
-    }
-
-    // Render Redistribution Table
-    const tbodyTrans = document.getElementById('transfer-tbody');
-    tbodyTrans.innerHTML = '';
-
-    if (suggestedTransfers.length === 0) {
-        tbodyTrans.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--color-text-muted); padding: 2rem;">No surplus transfers required currently. All health centres operate within safe stock levels!</td></tr>`;
-    } else {
-        suggestedTransfers.forEach((t, idx) => {
-            const tr = document.createElement('tr');
-            let badgeClass = t.priority.includes('CRITICAL') ? 'badge-critical' : (t.priority.includes('OUTDATED') ? 'badge-outdated' : 'badge-warning');
-
-            const isPending = pendingRequestsState.some(r =>
-                r.status === 'PENDING' &&
-                r.donor === t.donorCentre &&
-                r.recipient === t.recipientCentre &&
-                r.medicine === t.medicineName
-            );
-
-            const impactObj = t.impact || computeTransferImpact(t.donorCentre, t.recipientCentre, t.medicineName, t.transferQty);
-
-            tr.innerHTML = `
-                <td><span class="badge ${badgeClass}">#${idx + 1} ${esc(t.priority)}</span></td>
-                <td>
-                    <div class="transfer-route-box">
-                        <span class="route-phc">${esc(t.donorCentre)}</span>
-                        <span class="route-arrow"><i class="fa-solid fa-arrow-right"></i> ${t.distanceKm} km</span>
-                        <span class="route-phc">${esc(t.recipientCentre)}</span>
+        return `
+            <div class="alert-card alert-card-${item.status.toLowerCase()}">
+                <div class="alert-card-header">
+                    <div class="alert-card-title">
+                        <span class="status-pill status-${item.status.toLowerCase()}">${statusLabel}</span>
+                        <strong>${esc(mName)}</strong>
                     </div>
-                </td>
-                <td><strong>${esc(t.medicineName)}</strong></td>
-                <td>${t.distanceKm} km</td>
-                <td><strong style="color:var(--color-accent); font-size: 0.95rem;">${t.transferQty} units</strong></td>
-                <td>${impactCompactHtml(impactObj)}</td>
-                <td><small style="color:var(--color-text-muted);">${esc(t.reasoning)}</small></td>
-                <td>
-                    ${isPending ? `
-                        <button class="btn btn-outline btn-sm" disabled style="opacity:0.7; cursor:not-allowed;">
-                            <i class="fa-solid fa-clock"></i> Pending Approval
-                        </button>
-                    ` : `
-                        <button class="btn btn-success btn-sm btn-request-transfer" 
-                            data-donor="${esc(t.donorCentre)}" 
-                            data-recipient="${esc(t.recipientCentre)}" 
-                            data-medicine="${esc(t.medicineName)}" 
-                            data-qty="${t.transferQty}">
-                            <i class="fa-solid fa-truck-fast"></i> Request Transfer
-                        </button>
-                    `}
-                </td>
+                    <span class="alert-card-centre">${esc(cName)}</span>
+                </div>
+                <p class="alert-card-sentence">${esc(plainSentence)}</p>
+                <div class="alert-card-footer">
+                    <div class="progress-bar-wrap" title="Coverage days vs safety target">
+                        <div class="progress-bar-fill progress-${item.status.toLowerCase()}" style="width: ${pct}%"></div>
+                    </div>
+                    <div class="alert-card-actions">
+                        <small>${currentLanguage === 'ta' ? 'தீரும் தேதி' : 'Stockout'}: ${calculateStockoutDate(item.daysRemaining)}</small>
+                        ${actionBtn}
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function renderRedistribution(redistribution) {
+    const containerTransfers = document.getElementById('suggested-transfers-container');
+    if (containerTransfers) {
+        if (redistribution.suggestedTransfers.length === 0) {
+            containerTransfers.innerHTML = `<div class="empty-state">${currentLanguage === 'ta' ? 'தற்போது PHC இடையே மாற்றக்கூடிய மேலதிக இருப்பு எதுவும் இல்லை.' : 'No inter-PHC transfers recommended at this time.'}</div>`;
+        } else {
+            containerTransfers.innerHTML = redistribution.suggestedTransfers.map((tItem, idx) => {
+                const isPending = pendingRequestsState.some(r => r.status === 'PENDING' && r.donor === tItem.donorCentre && r.recipient === tItem.recipientCentre && r.medicine === tItem.medicineName);
+                const recName = currentLanguage === 'ta' ? (centreNamesTa[tItem.recipientCentre] || tItem.recipientCentre) : tItem.recipientCentre;
+                const donName = currentLanguage === 'ta' ? (centreNamesTa[tItem.donorCentre] || tItem.donorCentre) : tItem.donorCentre;
+                const mName = currentLanguage === 'ta' ? (medicineNamesTa[tItem.medicineName] || tItem.medicineName) : tItem.medicineName;
+                const unit = getMedicineUnitNoun(tItem.medicineName);
+                const prioLabel = tItem.priority === 'CRITICAL' ? t('status_critical') : (tItem.priority === 'TOP-UP' ? t('status_topup') : t('status_warning'));
+
+                return `
+                    <div class="transfer-card">
+                        <div class="transfer-card-header">
+                            <div>
+                                <span class="status-pill status-${tItem.priority.toLowerCase()}">${prioLabel}</span>
+                                <strong>${esc(mName)}</strong>
+                            </div>
+                            <small class="text-muted">${tItem.distanceKm} km away</small>
+                        </div>
+                        <div class="transfer-route-strip">
+                            <div class="route-node">
+                                <span class="route-label">${currentLanguage === 'ta' ? 'வழங்குநர் (Donor)' : 'Donor'}</span>
+                                <strong>${esc(donName)}</strong>
+                            </div>
+                            <div class="route-arrow">
+                                <span>${tItem.transferQty} ${unit[currentLanguage]}</span>
+                                <div class="arrow-line">→</div>
+                            </div>
+                            <div class="route-node">
+                                <span class="route-label">${currentLanguage === 'ta' ? 'பெறுநர் (Recipient)' : 'Recipient'}</span>
+                                <strong>${esc(recName)}</strong>
+                            </div>
+                        </div>
+                        <p class="transfer-reason">${esc(tItem.reasoning)}</p>
+                        ${impactHtml(tItem.impact)}
+                        <div class="transfer-card-footer">
+                            ${isPending 
+                                ? `<span class="badge badge-pending">${currentLanguage === 'ta' ? 'ஒப்புதலுக்கு காத்திருக்கிறது' : 'Request Pending Approval'}</span>`
+                                : `<button class="btn btn-primary btn-sm" onclick="openRequestTransferModalByIndex(${idx})">${currentLanguage === 'ta' ? 'மாற்றத்தை கோருங்கள்' : 'Request Inter-PHC Transfer'}</button>`
+                            }
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+    }
+
+    const containerDistrict = document.getElementById('district-requirements-container');
+    if (containerDistrict) {
+        if (redistribution.districtRequirements.length === 0) {
+            containerDistrict.innerHTML = `<div class="empty-state">${currentLanguage === 'ta' ? 'தற்போது மாவட்டத்திற்கு அனுப்ப வேண்டிய புதிய கோரிக்கைகள் இல்லை.' : 'All health centre shortfalls are currently satisfied by inter-PHC transfers.'}</div>`;
+        } else {
+            containerDistrict.innerHTML = `
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>${currentLanguage === 'ta' ? 'மையம்' : 'Centre'}</th>
+                            <th>${currentLanguage === 'ta' ? 'மருந்து' : 'Medicine'}</th>
+                            <th>${currentLanguage === 'ta' ? 'மொத்த பற்றாக்குறை' : 'Total Shortfall'}</th>
+                            <th>${currentLanguage === 'ta' ? 'PHC மூலம் கிடைத்தது' : 'Covered by PHC Transfer'}</th>
+                            <th>${currentLanguage === 'ta' ? 'மாவட்ட தேவை' : 'Remaining District Order'}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${redistribution.districtRequirements.map(d => {
+                            const cName = currentLanguage === 'ta' ? (centreNamesTa[d.centreId] || d.centreId) : d.centreId;
+                            const mName = currentLanguage === 'ta' ? (medicineNamesTa[d.medicineName] || d.medicineName) : d.medicineName;
+                            const unit = getMedicineUnitNoun(d.medicineName);
+                            return `
+                                <tr>
+                                    <td><strong>${esc(cName)}</strong></td>
+                                    <td>${esc(mName)}</td>
+                                    <td class="num">${d.totalShortfall} ${unit[currentLanguage]}</td>
+                                    <td class="num" style="color: var(--color-safe);">${d.coveredBySurplus} ${unit[currentLanguage]}</td>
+                                    <td class="num" style="color: var(--color-critical); font-weight: 700;">${d.remainingDistrictReq} ${unit[currentLanguage]}</td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
             `;
-            tbodyTrans.appendChild(tr);
-        });
-
-        document.querySelectorAll('.btn-request-transfer').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const { donor, recipient, medicine, qty } = e.currentTarget.dataset;
-                const transferQty = parseInt(qty, 10);
-                openRequestTransferModal(donor, recipient, medicine, transferQty);
-            });
-        });
-    }
-
-    // Render District Procurement Requirements Table
-    const tbodyDist = document.getElementById('district-tbody');
-    tbodyDist.innerHTML = '';
-
-    if (districtRequirements.length === 0) {
-        tbodyDist.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--color-safe); padding: 2rem;"><i class="fa-solid fa-circle-check"></i> No additional district procurement required. All shortfalls covered by safe PHC transfers!</td></tr>`;
-    } else {
-        districtRequirements.forEach(d => {
-            const tr = document.createElement('tr');
-            let badgeClass = d.status === 'CRITICAL' ? 'badge-critical' : (d.status === 'OUTDATED' ? 'badge-outdated' : 'badge-warning');
-
-            tr.innerHTML = `
-                <td><strong>${esc(d.centreId)}</strong></td>
-                <td><strong>${esc(d.medicineName)}</strong></td>
-                <td>${d.totalShortfall} units</td>
-                <td>${d.coveredBySurplus} units</td>
-                <td><strong style="color:var(--color-critical); font-size: 1rem;">${d.remainingDistrictReq} units</strong></td>
-                <td>
-                    <span class="badge ${badgeClass}">${esc(d.status)}</span>
-                    ${d.isOutdated ? '<br><small style="color:var(--color-outdated);">(Manual Audit Needed)</small>' : ''}
-                </td>
-            `;
-            tbodyDist.appendChild(tr);
-        });
-    }
-
-    renderBatchTable();
-    renderFacilityRiskMatrix(processedList);
-    renderSimulator(processedList);
-    renderDistanceMatrix();
-    renderPendingApprovalsAndAudit();
-    updateNetworkStatus();
-}
-
-/**
- * Render PHC Distance Matrix Table
- */
-function renderDistanceMatrix() {
-    const table = document.getElementById('distance-matrix-table');
-    if (!table) return;
-    const centres = Object.keys(distanceMatrix);
-
-    let html = `<thead><tr><th>PHC Centre</th>`;
-    centres.forEach(c => { html += `<th>${esc(c)}</th>`; });
-    html += `</tr></thead><tbody>`;
-
-    centres.forEach(rowC => {
-        html += `<tr><td><strong>${esc(rowC)}</strong></td>`;
-        centres.forEach(colC => {
-            const dist = distanceMatrix[rowC][colC];
-            if (rowC === colC) {
-                html += `<td class="matrix-self">0 km</td>`;
-            } else {
-                html += `<td class="matrix-dist">${dist} km</td>`;
-            }
-        });
-        html += `</tr>`;
-    });
-    html += `</tbody>`;
-    table.innerHTML = html;
-}
-
-/**
- * Populate Dropdowns
- */
-function populateDropdowns() {
-    const centreSelects = [
-        document.getElementById('filter-centre'),
-        document.getElementById('modal-centre'),
-        document.getElementById('modal-batch-centre'),
-        document.getElementById('wizard-centre')
-    ];
-
-    const medSelects = [
-        document.getElementById('filter-medicine'),
-        document.getElementById('modal-batch-medicine'),
-        document.getElementById('wizard-medicine')
-    ];
-
-    const centres = Object.keys(centreNames);
-    centreSelects.forEach(sel => {
-        if (!sel) return;
-        const isFilter = sel.id === 'filter-centre';
-        sel.innerHTML = isFilter ? '<option value="ALL">All Health Centres</option>' : '';
-        centres.forEach(c => {
-            sel.innerHTML += `<option value="${esc(c)}">${esc(c)} - ${esc(centreNames[c])}</option>`;
-        });
-    });
-
-    const medicines = Array.from(new Set(inventoryState.map(i => i.medicineName)));
-    medSelects.forEach(sel => {
-        if (!sel) return;
-        const isFilter = sel.id === 'filter-medicine';
-        sel.innerHTML = isFilter ? '<option value="ALL">All Medicines</option>' : '';
-        medicines.forEach(m => {
-            sel.innerHTML += `<option value="${esc(m)}">${esc(m)}</option>`;
-        });
-    });
-}
-
-/**
- * Guided 3-Step Simple Stock Entry Wizard Engine
- */
-let wizardCurrentStep = 1;
-function openSimpleWizardModal() {
-    wizardCurrentStep = 1;
-    updateWizardStepView();
-    document.getElementById('modal-simple-wizard').classList.add('open');
-}
-
-function closeSimpleWizardModal() {
-    document.getElementById('modal-simple-wizard').classList.remove('open');
-}
-
-function updateWizardStepView() {
-    [1, 2, 3].forEach(step => {
-        const page = document.getElementById(`wizard-step-${step}`);
-        const pill = document.getElementById(`step-pill-${step}`);
-        if (page) page.style.display = step === wizardCurrentStep ? 'block' : 'none';
-        if (pill) pill.classList.toggle('active', step === wizardCurrentStep);
-    });
-
-    const btnBack = document.getElementById('btn-wizard-back');
-    const btnNext = document.getElementById('btn-wizard-next');
-    const btnSubmit = document.getElementById('btn-wizard-submit');
-
-    if (btnBack) btnBack.style.display = wizardCurrentStep > 1 ? 'inline-flex' : 'none';
-    if (btnNext) btnNext.style.display = wizardCurrentStep < 3 ? 'inline-flex' : 'none';
-    if (btnSubmit) btnSubmit.style.display = wizardCurrentStep === 3 ? 'inline-flex' : 'none';
-
-    if (wizardCurrentStep === 3) {
-        renderWizardSummary();
+        }
     }
 }
 
-function renderWizardSummary() {
-    const centreId = document.getElementById('wizard-centre').value;
-    const medicineName = document.getElementById('wizard-medicine').value;
-    const qty = parseInt(document.getElementById('wizard-qty').value, 10) || 0;
-    const expiry = document.getElementById('wizard-expiry').value || getFutureDateString(180);
-
-    const summaryBox = document.getElementById('wizard-summary-box');
-    if (!summaryBox) return;
-
-    const daysLeft = getDaysUntilExpiry(expiry);
-
-    summaryBox.innerHTML = `
-        <i class="fa-solid fa-circle-check"></i> <strong>Confirmation Summary:</strong><br>
-        Adding <strong>${qty} units</strong> of <strong>${esc(medicineName)}</strong> to <strong>${esc(centreId)}</strong>.<br>
-        Expiry Date: <strong>${esc(formatDate(expiry))}</strong> (${daysLeft} days remaining).<br>
-        <em>Tamil: ${esc(centreId)} க்கு ${qty} அலகுகள் ${esc(medicineName)} சேர்க்கப்படுகிறது.</em>
-    `;
-
-    if (voiceAssistantEnabled) {
-        speakText(`${qty} units of ${medicineName} at ${centreId}. Expiry in ${daysLeft} days. Please confirm to save.`, selectedVoiceLanguage);
-    }
+function openRequestTransferModalByIndex(idx) {
+    const processedList = inventoryState.map(processForecastItem);
+    const { suggestedTransfers } = computeRedistribution(processedList);
+    const tItem = suggestedTransfers[idx];
+    if (tItem) openRequestTransferModal(tItem);
 }
 
-/**
- * Open Request Transfer Modal
- */
 let activeRequestData = null;
-function openRequestTransferModal(donor, recipient, medicine, qty) {
-    activeRequestData = { donor, recipient, medicine, qty };
-    const impact = computeTransferImpact(donor, recipient, medicine, qty);
+function openRequestTransferModal(transfer) {
+    activeRequestData = {
+        donor: transfer.donorCentre,
+        recipient: transfer.recipientCentre,
+        medicine: transfer.medicineName,
+        qty: transfer.transferQty,
+        impact: transfer.impact
+    };
 
-    document.getElementById('req-transfer-summary').innerHTML = `
-        <div style="font-size:0.9rem; font-weight:700; margin-bottom:0.5rem; color:var(--color-text-main);">
-            Requesting Transfer of <span style="color:var(--color-accent);">${qty} units</span> of <strong>${esc(medicine)}</strong> from <strong>${esc(donor)}</strong> to <strong>${esc(recipient)}</strong>
-        </div>
-        ${impactHtml(impact)}
-    `;
+    const cReqTitle = document.getElementById('req-modal-title');
+    if (cReqTitle) cReqTitle.textContent = currentLanguage === 'ta' ? 'PHC மருந்து மாற்றக் கோரிக்கை' : 'Confirm Inter-PHC Stock Transfer Request';
 
-    document.getElementById('modal-request-transfer').classList.add('open');
+    const cSummary = document.getElementById('req-impact-summary');
+    if (cSummary) cSummary.innerHTML = impactHtml(transfer.impact);
+
+    const modal = document.getElementById('modal-request-transfer');
+    if (modal) modal.classList.add('open');
 }
 
 function closeRequestTransferModal() {
-    document.getElementById('modal-request-transfer').classList.remove('open');
+    const modal = document.getElementById('modal-request-transfer');
+    if (modal) modal.classList.remove('open');
     activeRequestData = null;
 }
 
-/**
- * Open Medical Officer Approval Modal
- */
+function renderPendingApprovals() {
+    const container = document.getElementById('pending-approvals-container');
+    if (!container) return;
+
+    const pending = pendingRequestsState.filter(r => r.status === 'PENDING');
+    if (pending.length === 0) {
+        container.innerHTML = `<div class="empty-state">${currentLanguage === 'ta' ? 'மருத்துவ அலுவலரின் ஒப்புதலுக்காக காத்திருக்கும் கோரிக்கைகள் எதுவும் இல்லை.' : 'No pending inter-PHC transfer requests awaiting Medical Officer approval.'}</div>`;
+        return;
+    }
+
+    container.innerHTML = pending.map(req => {
+        const donName = currentLanguage === 'ta' ? (centreNamesTa[req.donor] || req.donor) : req.donor;
+        const recName = currentLanguage === 'ta' ? (centreNamesTa[req.recipient] || req.recipient) : req.recipient;
+        const mName = currentLanguage === 'ta' ? (medicineNamesTa[req.medicine] || req.medicine) : req.medicine;
+        const unit = getMedicineUnitNoun(req.medicine);
+
+        return `
+            <div class="approval-card">
+                <div class="approval-card-header">
+                    <div>
+                        <span class="badge badge-pending">PENDING APPROVAL</span>
+                        <strong>${esc(mName)} (${req.qty} ${unit[currentLanguage]})</strong>
+                    </div>
+                    <small class="text-muted">${esc(req.requestedAt)}</small>
+                </div>
+                <div class="approval-route">${esc(donName)} → ${esc(recName)}</div>
+                ${impactHtml(req.impact)}
+                <div class="approval-card-actions">
+                    <button class="btn btn-outline btn-sm btn-danger" onclick="openRejectModalById('${req.id}')">${currentLanguage === 'ta' ? 'நிராகரி' : 'Reject'}</button>
+                    <button class="btn btn-primary btn-sm" onclick="openApproveModalById('${req.id}')">${currentLanguage === 'ta' ? 'PIN மூலம் ஒப்புதல் அளி' : 'Approve with PIN'}</button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function openApproveModalById(id) {
+    const req = pendingRequestsState.find(r => r.id === id);
+    if (req) openApproveModal(req);
+}
+
+function openRejectModalById(id) {
+    const req = pendingRequestsState.find(r => r.id === id);
+    if (req) openRejectModal(req);
+}
+
 let activePendingRequestToApprove = null;
 function openApproveModal(req) {
     activePendingRequestToApprove = req;
-    document.getElementById('approve-route-summary').innerHTML = `
-        <div style="font-size:0.85rem; font-weight:700; margin-bottom:0.4rem;">
-            Transfer Route: <strong>${esc(req.donor)}</strong> → <strong>${esc(req.recipient)}</strong> | ${req.qty} units of <strong>${esc(req.medicine)}</strong>
-        </div>
-        ${impactHtml(req.impact)}
-    `;
+    const summary = document.getElementById('approve-route-summary');
+    if (summary) {
+        summary.innerHTML = `
+            <div style="font-size:0.9rem; font-weight:700; margin-bottom:0.5rem;">
+                ${esc(req.donor)} → ${esc(req.recipient)} | ${req.qty} units of ${esc(req.medicine)}
+            </div>
+            ${impactHtml(req.impact)}
+        `;
+    }
     document.getElementById('input-officer-name').value = '';
     document.getElementById('input-officer-pin').value = '';
     document.getElementById('input-approve-note').value = '';
+
+    // Phase 1 bug fix: Show demo PIN hint only when demo data is active
+    const pinHint = document.getElementById('pin-demo-hint');
+    if (pinHint) pinHint.style.display = isDemoDataLoaded ? 'block' : 'none';
+
     document.getElementById('modal-approve-transfer').classList.add('open');
 }
 
@@ -1925,14 +1343,11 @@ function closeApproveModal() {
     activePendingRequestToApprove = null;
 }
 
-/**
- * Open Rejection Modal
- */
 let activePendingRequestToReject = null;
 function openRejectModal(req) {
     activePendingRequestToReject = req;
     document.getElementById('reject-route-summary').innerHTML = `
-        <div style="font-size:0.85rem; font-weight:700;">
+        <div style="font-size:0.9rem; font-weight:700;">
             Rejecting Request: <strong>${esc(req.donor)}</strong> → <strong>${esc(req.recipient)}</strong> (${req.qty} units of ${esc(req.medicine)})
         </div>
     `;
@@ -1945,74 +1360,304 @@ function closeRejectModal() {
     activePendingRequestToReject = null;
 }
 
-function loadDemoData() {
-    loadDemoScenario();
+function renderInventoryTable(filteredInventory, context) {
+    const container = document.getElementById('inventory-table-container');
+    if (!container) return;
+
+    if (filteredInventory.length === 0) {
+        container.innerHTML = `<div class="empty-state">${currentLanguage === 'ta' ? 'பொருந்தும் இருப்பு பதிவுகள் எதுவும் இல்லை.' : 'No matching inventory records found.'}</div>`;
+        return;
+    }
+
+    container.innerHTML = `
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>${currentLanguage === 'ta' ? 'மையம்' : 'Centre'}</th>
+                    <th>${currentLanguage === 'ta' ? 'மருந்து' : 'Medicine'}</th>
+                    <th>${currentLanguage === 'ta' ? 'மொத்த இருப்பு' : 'Current Stock'}</th>
+                    <th>${currentLanguage === 'ta' ? 'பயன்பாட்டு இருப்பு' : 'Usable Stock'}</th>
+                    <th>${currentLanguage === 'ta' ? 'தினசரி பயன்பாடு' : 'Daily Use'}</th>
+                    <th>${currentLanguage === 'ta' ? 'நாட்கள்' : 'Days Left'}</th>
+                    <th>${currentLanguage === 'ta' ? 'நிலை' : 'Status'}</th>
+                    <th>${currentLanguage === 'ta' ? 'விளக்கம்' : 'Alert Explanation'}</th>
+                    <th>${currentLanguage === 'ta' ? 'செயல்' : 'Action'}</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${filteredInventory.map(item => {
+                    const cName = currentLanguage === 'ta' ? (centreNamesTa[item.centreId] || item.centreId) : item.centreId;
+                    const mName = currentLanguage === 'ta' ? (medicineNamesTa[item.medicineName] || item.medicineName) : item.medicineName;
+                    const unit = getMedicineUnitNoun(item.medicineName);
+                    const daysStr = item.daysRemaining === Infinity ? '30+' : item.daysRemaining.toFixed(1);
+                    const statusLabel = t(`status_${item.status.toLowerCase()}`);
+                    const plainSentence = explainAlert(item, context)[currentLanguage];
+
+                    return `
+                        <tr>
+                            <td><strong>${esc(cName)}</strong></td>
+                            <td>${esc(mName)}</td>
+                            <td class="num">${item.currentStock} ${unit[currentLanguage]}</td>
+                            <td class="num"><strong>${item.usableStock}</strong> ${unit[currentLanguage]}</td>
+                            <td class="num">${item.dailyConsumption} / day</td>
+                            <td class="num"><strong>${daysStr} d</strong></td>
+                            <td><span class="status-pill status-${item.status.toLowerCase()}">${statusLabel}</span></td>
+                            <td style="font-size:0.85rem; max-width:280px;">${esc(plainSentence)}</td>
+                            <td>
+                                <button class="btn btn-outline btn-sm" onclick="editInventoryRecord('${item.id}')">${currentLanguage === 'ta' ? 'திருத்து' : 'Edit'}</button>
+                            </td>
+                        </tr>
+                    `;
+                }).join('')}
+            </tbody>
+        </table>
+    `;
 }
 
-/**
- * DEMO SCENARIO LOADER (Benchmark Benchmark)
- */
+function editInventoryRecord(id) {
+    const item = inventoryState.find(i => i.id === id);
+    if (!item) return;
+
+    document.getElementById('modal-centre').value = item.centreId;
+    document.getElementById('modal-medicine').value = item.medicineName;
+    document.getElementById('modal-stock-qty').value = item.currentStock;
+    document.getElementById('modal-daily-cons').value = item.dailyConsumption;
+    document.getElementById('modal-target-days').value = item.targetCoverageDays;
+    document.getElementById('modal-last-updated').value = item.lastUpdated;
+
+    const modalStock = document.getElementById('modal-stock');
+    if (modalStock) modalStock.classList.add('open');
+}
+
+function renderBatchTable() {
+    const container = document.getElementById('batch-table-container');
+    if (!container) return;
+
+    if (batchState.length === 0) {
+        container.innerHTML = `<div class="empty-state">${currentLanguage === 'ta' ? 'பதிவு செய்யப்பட்ட தொகுப்புகள் எதுவும் இல்லை.' : 'No registered medicine batches found.'}</div>`;
+        return;
+    }
+
+    container.innerHTML = `
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>${currentLanguage === 'ta' ? 'தொகுதி எண்' : 'Batch No'}</th>
+                    <th>${currentLanguage === 'ta' ? 'மையம்' : 'Centre'}</th>
+                    <th>${currentLanguage === 'ta' ? 'மருந்து' : 'Medicine'}</th>
+                    <th>${currentLanguage === 'ta' ? 'எண்ணிக்கை' : 'Quantity'}</th>
+                    <th>${currentLanguage === 'ta' ? 'காலாவதி தேதி' : 'Expiry Date'}</th>
+                    <th>${currentLanguage === 'ta' ? 'மீதமுள்ள நாட்கள்' : 'Days Until Expiry'}</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${batchState.map(b => {
+                    const daysLeft = getDaysUntilExpiry(b.expiryDate);
+                    const isExp = daysLeft < 0;
+                    const cName = currentLanguage === 'ta' ? (centreNamesTa[b.centreId] || b.centreId) : b.centreId;
+                    const mName = currentLanguage === 'ta' ? (medicineNamesTa[b.medicineName] || b.medicineName) : b.medicineName;
+
+                    return `
+                        <tr class="${isExp ? 'row-expired' : ''}">
+                            <td><code>${esc(b.batchNumber)}</code></td>
+                            <td>${esc(cName)}</td>
+                            <td>${esc(mName)}</td>
+                            <td class="num">${b.quantity}</td>
+                            <td>${formatDate(b.expiryDate)}</td>
+                            <td><strong style="color: ${isExp ? 'var(--color-critical)' : 'inherit'}">${isExp ? (currentLanguage === 'ta' ? 'காலாவதியானது' : 'EXPIRED') : `${daysLeft} days`}</strong></td>
+                        </tr>
+                    `;
+                }).join('')}
+            </tbody>
+        </table>
+    `;
+}
+
+function renderAuditLogTable() {
+    const container = document.getElementById('audit-log-container');
+    if (!container) return;
+
+    if (auditLogState.length === 0) {
+        container.innerHTML = `<div class="empty-state">${currentLanguage === 'ta' ? 'தணிக்கை பதிவு விவரங்கள் எதுவுமில்லை.' : 'No audit log entries recorded yet.'}</div>`;
+        return;
+    }
+
+    container.innerHTML = `
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>${currentLanguage === 'ta' ? 'நேரம்' : 'Timestamp'}</th>
+                    <th>${currentLanguage === 'ta' ? 'செயல்' : 'Action'}</th>
+                    <th>${currentLanguage === 'ta' ? 'அதிகாரி' : 'Officer'}</th>
+                    <th>${currentLanguage === 'ta' ? 'வழித்தடம்' : 'Route'}</th>
+                    <th>${currentLanguage === 'ta' ? 'மருந்து' : 'Medicine'}</th>
+                    <th>${currentLanguage === 'ta' ? 'அளவு' : 'Qty'}</th>
+                    <th>${currentLanguage === 'ta' ? 'குறிப்பு' : 'Note'}</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${auditLogState.map(a => `
+                    <tr>
+                        <td style="font-size:0.8rem;">${esc(a.timestamp)}</td>
+                        <td><span class="badge ${a.action === 'Approved' ? 'badge-safe' : (a.action === 'Rejected' ? 'badge-danger' : 'badge-info')}">${esc(a.action)}</span></td>
+                        <td>${esc(a.officer)}</td>
+                        <td>${esc(a.route)}</td>
+                        <td>${esc(a.medicine)}</td>
+                        <td class="num">${a.qty}</td>
+                        <td style="font-size:0.8rem;">${esc(a.note)}</td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
+}
+
+function renderFacilityCards(processedInventory) {
+    const container = document.getElementById('facility-cards-container');
+    if (!container) return;
+
+    const centres = ['Centre A', 'Centre B', 'Centre C', 'Centre D'];
+    container.innerHTML = centres.map(cId => {
+        const cName = currentLanguage === 'ta' ? (centreNamesTa[cId] || cId) : cId;
+        const cItems = processedInventory.filter(i => i.centreId === cId);
+        const critItems = cItems.filter(i => i.status === 'CRITICAL');
+        const warnItems = cItems.filter(i => i.status === 'WARNING');
+        const safeItems = cItems.filter(i => i.status === 'SAFE');
+
+        return `
+            <div class="facility-card">
+                <div class="facility-card-header">
+                    <h4>${esc(cName)}</h4>
+                    <span class="badge ${critItems.length > 0 ? 'badge-danger' : 'badge-safe'}">
+                        ${critItems.length > 0 ? `${critItems.length} Critical` : 'Operational'}
+                    </span>
+                </div>
+                <div class="facility-card-body">
+                    <div class="stat-pill-row">
+                        <span class="stat-pill pill-critical">${critItems.length} Critical</span>
+                        <span class="stat-pill pill-warning">${warnItems.length} Warning</span>
+                        <span class="stat-pill pill-safe">${safeItems.length} Safe</span>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function renderSyncStatusPanel() {
+    const container = document.getElementById('sync-status-panel-container');
+    if (!container) return;
+
+    const queue = OutboxQueue.getQueue();
+    if (queue.length === 0) {
+        container.innerHTML = `<p class="text-muted" style="font-size:0.85rem;">${currentLanguage === 'ta' ? 'அனைத்து தரவுகளும் ஒத்திசைக்கப்பட்டுள்ளன (வரிசை காலியாக உள்ளது).' : 'All local changes are fully synced to server storage (outbox empty).'}</p>`;
+        return;
+    }
+
+    container.innerHTML = `
+        <div class="sync-panel">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+                <strong>${t('sync_status_heading')} (${queue.length} items)</strong>
+                <button class="btn btn-outline btn-sm" onclick="OutboxQueue.flush()">${t('btn_sync_now')}</button>
+            </div>
+            <div class="sync-queue-list">
+                ${queue.map(q => `
+                    <div class="sync-item sync-${q.status}">
+                        <span><strong>${q.type}</strong> (${q.payload.medicineName || q.payload.medicine || 'Stock update'})</span>
+                        <span class="badge badge-${q.status === 'synced' ? 'safe' : (q.status === 'pending' ? 'pending' : 'danger')}">${q.status}</span>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    `;
+}
+
+function renderSimpleModeView(processedInventory, redistribution) {
+    const container = document.getElementById('simple-mode-view');
+    if (!container) return;
+
+    const criticals = processedInventory.filter(i => i.status === 'CRITICAL');
+    container.innerHTML = `
+        <div class="simple-mode-card">
+            <h3>${currentLanguage === 'ta' ? 'எளிய வழிகாட்டல் இருப்பு பார்வை (Guided Operating Mode)' : 'Guided Simple Operating Panel'}</h3>
+            <p>${currentLanguage === 'ta' ? 'சிக்கலான விளக்கப்படங்கள் இல்லாமல் உடனடி செயல்பாடுகளை மட்டும் காணவும்.' : 'Clear single-action interface designed for fast physical count entry and transfer verification.'}</p>
+            <div class="simple-grid">
+                <button class="btn btn-primary btn-lg" onclick="document.getElementById('modal-add-stock-choice').classList.add('open')">
+                    ➕ ${t('add_update_stock')}
+                </button>
+                <button class="btn btn-outline btn-lg" onclick="switchTab('tab-transfers')">
+                    🚚 ${currentLanguage === 'ta' ? 'PHC மாற்றங்களை பார்' : 'View Transfer Recommendations'}
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+function renderSimulator(processedList) {
+    const container = document.getElementById('sim-results-container');
+    if (!container) return;
+
+    const mult = parseFloat(document.getElementById('sim-demand-multiplier')?.value || 1.0);
+    const delay = parseInt(document.getElementById('sim-delay-days')?.value || 0, 10);
+    const shock = parseInt(document.getElementById('sim-supply-shock')?.value || 0, 10);
+
+    const simResults = processedList.map(item => {
+        const simCons = item.dailyConsumption * mult;
+        const simStock = Math.max(0, item.usableStock - shock);
+        let simDays = simCons > 0 ? (simStock / simCons) - delay : Infinity;
+        if (simDays < 0) simDays = 0;
+
+        return {
+            ...item,
+            simStock,
+            simCons,
+            simDays
+        };
+    });
+
+    container.innerHTML = `
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>${currentLanguage === 'ta' ? 'மையம்' : 'Centre'}</th>
+                    <th>${currentLanguage === 'ta' ? 'மருந்து' : 'Medicine'}</th>
+                    <th>${currentLanguage === 'ta' ? 'இயல்பு நிலை (நாட்கள்)' : 'Baseline Days'}</th>
+                    <th>${currentLanguage === 'ta' ? 'சோதனை நிலை (நாட்கள்)' : 'Simulated Days'}</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${simResults.map(s => {
+                    const baseStr = s.daysRemaining === Infinity ? '30+' : s.daysRemaining.toFixed(1);
+                    const simStr = s.simDays === Infinity ? '30+' : s.simDays.toFixed(1);
+                    return `
+                        <tr>
+                            <td><strong>${esc(s.centreId)}</strong></td>
+                            <td>${esc(s.medicineName)}</td>
+                            <td>${baseStr} d</td>
+                            <td><strong style="color: ${s.simDays <= leadTimeDays ? 'var(--color-critical)' : 'inherit'}">${simStr} d</strong></td>
+                        </tr>
+                    `;
+                }).join('')}
+            </tbody>
+        </table>
+    `;
+}
+
+// --- Benchmark Demo Data & Reset (Phase 1 Fixes) ---
+
 function loadDemoScenario() {
+    isDemoDataLoaded = true;
+
     inventoryState = [
-        {
-            id: 'DEMO-A',
-            centreId: 'Centre A',
-            medicineName: 'Paracetamol Syrup (100ml)',
-            currentStock: 60,
-            dailyConsumption: 10,
-            targetCoverageDays: 30,
-            lastUpdated: getPastDateString(0),
-            lastTransferAt: null
-        },
-        {
-            id: 'DEMO-C',
-            centreId: 'Centre C',
-            medicineName: 'Paracetamol Syrup (100ml)',
-            currentStock: 200,
-            dailyConsumption: 2,
-            targetCoverageDays: 30,
-            lastUpdated: getPastDateString(0),
-            lastTransferAt: null
-        },
-        {
-            id: 'DEMO-B',
-            centreId: 'Centre B',
-            medicineName: 'Amoxicillin 500mg Capsules',
-            currentStock: 400,
-            dailyConsumption: 10,
-            targetCoverageDays: 30,
-            lastUpdated: getPastDateString(1),
-            lastTransferAt: null
-        },
-        {
-            id: 'DEMO-D',
-            centreId: 'Centre D',
-            medicineName: 'ORS Electrolyte Packets',
-            currentStock: 500,
-            dailyConsumption: 5,
-            targetCoverageDays: 30,
-            lastUpdated: getPastDateString(2),
-            lastTransferAt: null
-        }
+        { id: 'DEMO-A', centreId: 'Centre A', medicineName: 'Paracetamol Syrup (100ml)', currentStock: 60, dailyConsumption: 10, targetCoverageDays: 30, lastUpdated: getPastDateString(0), lastTransferAt: null },
+        { id: 'DEMO-C', centreId: 'Centre C', medicineName: 'Paracetamol Syrup (100ml)', currentStock: 200, dailyConsumption: 2, targetCoverageDays: 30, lastUpdated: getPastDateString(0), lastTransferAt: null },
+        { id: 'DEMO-B', centreId: 'Centre B', medicineName: 'Amoxicillin 500mg Capsules', currentStock: 400, dailyConsumption: 10, targetCoverageDays: 30, lastUpdated: getPastDateString(1), lastTransferAt: null },
+        { id: 'DEMO-D', centreId: 'Centre D', medicineName: 'ORS Electrolyte Packets', currentStock: 500, dailyConsumption: 5, targetCoverageDays: 30, lastUpdated: getPastDateString(2), lastTransferAt: null }
     ];
 
     batchState = [
-        {
-            id: 'DEMO-BAT-A',
-            batchNumber: 'DEMO-BATCH-01',
-            centreId: 'Centre A',
-            medicineName: 'Paracetamol Syrup (100ml)',
-            quantity: 60,
-            expiryDate: getFutureDateString(180)
-        },
-        {
-            id: 'DEMO-BAT-C',
-            batchNumber: 'DEMO-BATCH-02',
-            centreId: 'Centre C',
-            medicineName: 'Paracetamol Syrup (100ml)',
-            quantity: 200,
-            expiryDate: getFutureDateString(240)
-        }
+        { id: 'DEMO-BAT-A', batchNumber: 'DEMO-BATCH-01', centreId: 'Centre A', medicineName: 'Paracetamol Syrup (100ml)', quantity: 60, expiryDate: getFutureDateString(180) },
+        { id: 'DEMO-BAT-C', batchNumber: 'DEMO-BATCH-02', centreId: 'Centre C', medicineName: 'Paracetamol Syrup (100ml)', quantity: 200, expiryDate: getFutureDateString(240) }
     ];
 
     pendingRequestsState = [];
@@ -2020,24 +1665,26 @@ function loadDemoScenario() {
 
     saveStateToStorage();
 
-    document.getElementById('filter-search').value = '';
-    document.getElementById('filter-centre').value = 'ALL';
-    document.getElementById('filter-medicine').value = 'ALL';
-    document.getElementById('filter-urgency').value = 'ALL';
-    document.getElementById('input-lead-time').value = '10';
+    if (document.getElementById('filter-search')) document.getElementById('filter-search').value = '';
+    if (document.getElementById('filter-centre')) document.getElementById('filter-centre').value = 'ALL';
+    if (document.getElementById('filter-medicine')) document.getElementById('filter-medicine').value = 'ALL';
+    if (document.getElementById('filter-urgency')) document.getElementById('filter-urgency').value = 'ALL';
+    if (document.getElementById('input-lead-time')) document.getElementById('input-lead-time').value = '10';
     leadTimeDays = 10;
 
     populateDropdowns();
     renderDashboard();
     switchTab('tab-overview');
 
-    showToast('⚡ Demonstration Scenario Loaded! Check Centre A (6 days left) and Centre C (140 safe surplus).', 'warning');
+    showToast(t('toast_demo_loaded'), 'success');
 }
 
-/**
- * Reset Data to Factory Seed
- */
+function loadDemoData() {
+    loadDemoScenario();
+}
+
 function resetData() {
+    isDemoDataLoaded = false;
     inventoryState = JSON.parse(JSON.stringify(initialInventorySeed));
     batchState = JSON.parse(JSON.stringify(initialBatchSeed));
     pendingRequestsState = [];
@@ -2049,33 +1696,32 @@ function resetData() {
     localStorage.removeItem('medicare_pending_requests');
     localStorage.removeItem('medicare_audit_log');
     localStorage.removeItem('medicare_sync_queue');
-    localStorage.removeItem('aushadhi_inventory_state');
-    localStorage.removeItem('aushadhi_batch_state');
 
-    document.getElementById('filter-search').value = '';
-    document.getElementById('filter-centre').value = 'ALL';
-    document.getElementById('filter-medicine').value = 'ALL';
-    document.getElementById('filter-urgency').value = 'ALL';
-    document.getElementById('input-lead-time').value = '10';
+    if (document.getElementById('filter-search')) document.getElementById('filter-search').value = '';
+    if (document.getElementById('filter-centre')) document.getElementById('filter-centre').value = 'ALL';
+    if (document.getElementById('filter-medicine')) document.getElementById('filter-medicine').value = 'ALL';
+    if (document.getElementById('filter-urgency')) document.getElementById('filter-urgency').value = 'ALL';
+    if (document.getElementById('input-lead-time')) document.getElementById('input-lead-time').value = '10';
     leadTimeDays = 10;
 
     populateDropdowns();
     renderDashboard();
-    showToast('Application state reset to factory seed data.', 'info');
+    showToast('Application state reset to seed dataset.', 'info');
 }
 
-/**
- * Toast Notification System
- */
+function resetAllData() {
+    resetData();
+}
+
 function showToast(message, type = 'info') {
     const container = document.getElementById('toast-container');
     if (!container) return;
 
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
-    let iconClass = type === 'success' ? 'fa-circle-check' : (type === 'warning' ? 'fa-triangle-exclamation' : (type === 'error' ? 'fa-circle-xmark' : 'fa-info-circle'));
+    let iconName = type === 'success' ? '#icon-check-circle' : (type === 'warning' ? '#icon-alert' : (type === 'error' ? '#icon-x' : '#icon-gear'));
 
-    toast.innerHTML = `<i class="fa-solid ${iconClass}"></i> <span>${esc(message)}</span>`;
+    toast.innerHTML = `<svg class="icon"><use href="${iconName}"></use></svg> <span>${esc(message)}</span>`;
     container.appendChild(toast);
 
     setTimeout(() => {
@@ -2091,32 +1737,56 @@ function showToast(message, type = 'info') {
     }, 4000);
 }
 
-/**
- * Custom Confirmation Modal
- */
 let pendingConfirmAction = null;
 function showConfirmModal(title, message, onConfirm) {
-    document.getElementById('confirm-title').innerHTML = `<i class="fa-solid fa-circle-question"></i> ${esc(title)}`;
-    document.getElementById('confirm-message').textContent = message;
+    const elTitle = document.getElementById('confirm-title');
+    if (elTitle) elTitle.innerHTML = `<svg class="icon"><use href="#icon-gear"></use></svg> ${esc(title)}`;
+
+    const elMsg = document.getElementById('confirm-message');
+    if (elMsg) elMsg.textContent = message;
+
     pendingConfirmAction = onConfirm;
 
     const modal = document.getElementById('modal-confirm');
-    modal.classList.add('open');
+    if (modal) modal.classList.add('open');
 }
 
 function closeConfirmModal() {
     const modal = document.getElementById('modal-confirm');
-    modal.classList.remove('open');
+    if (modal) modal.classList.remove('open');
     pendingConfirmAction = null;
 }
 
-/**
- * Tab Navigation
- */
+function populateDropdowns() {
+    const centres = ['Centre A', 'Centre B', 'Centre C', 'Centre D'];
+    const medicines = Array.from(new Set(inventoryState.map(i => i.medicineName))).sort();
+
+    const fillSelect = (id, items, allText) => {
+        const sel = document.getElementById(id);
+        if (!sel) return;
+        const currentVal = sel.value;
+        let html = allText ? `<option value="ALL">${allText}</option>` : '';
+        items.forEach(item => {
+            const displayName = id.includes('centre') ? (currentLanguage === 'ta' ? (centreNamesTa[item] || item) : item) : (currentLanguage === 'ta' ? (medicineNamesTa[item] || item) : item);
+            html += `<option value="${esc(item)}">${esc(displayName)}</option>`;
+        });
+        sel.innerHTML = html;
+        if (currentVal && items.includes(currentVal)) sel.value = currentVal;
+    };
+
+    fillSelect('filter-centre', centres, currentLanguage === 'ta' ? 'அனைத்து PHC மையங்களும்' : 'All PHCs');
+    fillSelect('filter-medicine', medicines, currentLanguage === 'ta' ? 'அனைத்து மருந்துகளும்' : 'All Medicines');
+    fillSelect('modal-centre', centres);
+    fillSelect('modal-medicine', medicines);
+    fillSelect('modal-batch-centre', centres);
+    fillSelect('modal-batch-medicine', medicines);
+    fillSelect('wizard-centre', centres);
+    fillSelect('wizard-medicine', medicines);
+}
+
 function switchTab(tabId) {
     if (!tabId || typeof document === 'undefined') return;
 
-    // 1. Update navigation tab button active state
     if (document.querySelectorAll) {
         document.querySelectorAll('.nav-tab').forEach(btn => {
             const isActive = btn.dataset.tab === tabId;
@@ -2125,18 +1795,16 @@ function switchTab(tabId) {
         });
     }
 
-    // 2. Control display of top sections (KPI summary & Filters)
-    const kpiSummary = document.getElementById ? document.getElementById('kpi-summary') : null;
+    const kpiSummary = document.getElementById('kpi-summary');
     if (kpiSummary) {
         kpiSummary.style.display = (tabId === 'tab-overview') ? 'grid' : 'none';
     }
 
-    const filterToolbar = document.querySelector ? document.querySelector('.filter-toolbar') : null;
+    const filterToolbar = document.querySelector('.filter-toolbar');
     if (filterToolbar) {
         filterToolbar.style.display = (tabId === 'tab-overview' || tabId === 'tab-inventory') ? 'flex' : 'none';
     }
 
-    // 3. Toggle active tab content section
     if (document.querySelectorAll) {
         document.querySelectorAll('.tab-content').forEach(content => {
             const isActive = content.id === tabId;
@@ -2144,17 +1812,94 @@ function switchTab(tabId) {
         });
     }
 
-    // 4. Smoothly bring selected section to top of content view
-    const mainContainer = document.querySelector ? document.querySelector('.dashboard-container') : null;
+    const mainContainer = document.querySelector('.dashboard-container');
     if (mainContainer && typeof mainContainer.scrollIntoView === 'function') {
         mainContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 }
 
-/**
- * Event Initialization & Event Handlers
- */
+// --- Barcode Scanner Logic ---
+
+function handleBarcodeDetected(code) {
+    const cleanCode = String(code).trim();
+    const match = barcodeCatalogue[cleanCode];
+
+    if (match) {
+        stopCameraScanner();
+        document.getElementById('modal-barcode-scanner')?.classList.remove('open');
+        document.getElementById('modal-add-stock-choice')?.classList.remove('open');
+
+        document.getElementById('modal-medicine').value = match.medicineName;
+        document.getElementById('modal-daily-cons').value = match.defaultDailyUse;
+        document.getElementById('modal-target-days').value = match.targetDays;
+
+        const modalStock = document.getElementById('modal-stock');
+        if (modalStock) {
+            modalStock.classList.add('open');
+            document.getElementById('modal-last-updated').value = toLocalISO(new Date());
+        }
+
+        showToast(`Barcode Scanned: Identified ${match.medicineName}`, 'success');
+    } else {
+        showToast(`Unknown Barcode GTIN: ${cleanCode}. Please select medicine manually.`, 'warning');
+    }
+}
+
+let cameraStream = null;
+function startCameraScanner() {
+    const video = document.getElementById('scanner-video');
+    if (!video) return;
+
+    if ('BarcodeDetector' in window) {
+        try {
+            const detector = new BarcodeDetector({ formats: ['ean_13', 'code_128', 'qr_code'] });
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }).then(stream => {
+                cameraStream = stream;
+                video.srcObject = stream;
+                video.play();
+
+                const scanInterval = setInterval(() => {
+                    if (!cameraStream) {
+                        clearInterval(scanInterval);
+                        return;
+                    }
+                    detector.detect(video).then(barcodes => {
+                        if (barcodes.length > 0) {
+                            clearInterval(scanInterval);
+                            handleBarcodeDetected(barcodes[0].rawValue);
+                        }
+                    }).catch(() => {});
+                }, 500);
+            }).catch(() => {
+                showToast('Camera Access Error: Please use manual GTIN entry fallback.', 'warning');
+            });
+        } catch (e) {
+            showToast('Native BarcodeDetector not supported. Use manual GTIN entry below.', 'info');
+        }
+    } else {
+        showToast('Native BarcodeDetector unavailable. Use manual GTIN barcode entry.', 'info');
+    }
+}
+
+function stopCameraScanner() {
+    if (cameraStream) {
+        cameraStream.getTracks().forEach(t => t.stop());
+        cameraStream = null;
+    }
+    const video = document.getElementById('scanner-video');
+    if (video) video.srcObject = null;
+}
+
+// --- DOM Initialization & Event Handlers ---
+
 document.addEventListener('DOMContentLoaded', () => {
+    // Register Service Worker for PWA Offline App Shell
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('./sw.js').then(() => {
+            console.log('[SW] Registered successfully');
+        }).catch(err => console.error('[SW] Registration failed:', err));
+    }
+
     populateDropdowns();
     renderDashboard();
     updateNetworkStatus();
@@ -2162,29 +1907,41 @@ document.addEventListener('DOMContentLoaded', () => {
     setLanguage(currentLanguage);
     setTheme(currentTheme);
 
-    window.addEventListener('online', updateNetworkStatus);
-    window.addEventListener('offline', updateNetworkStatus);
+    // Heartbeat for reliable connectivity detection every 15s
+    setInterval(() => {
+        if (!document.hidden) {
+            checkRealConnectivity().then(() => {
+                updateNetworkStatus();
+                OutboxQueue.flush();
+            });
+        }
+    }, 15000);
 
-    // Site Language Selector (English / Tamil)
+    window.addEventListener('online', () => {
+        checkRealConnectivity().then(() => {
+            updateNetworkStatus();
+            OutboxQueue.flush();
+        });
+    });
+    window.addEventListener('offline', () => {
+        updateNetworkStatus();
+    });
+
     const selectSiteLang = document.getElementById('select-site-lang');
     if (selectSiteLang) {
         selectSiteLang.value = currentLanguage;
         selectSiteLang.addEventListener('change', (e) => {
             setLanguage(e.target.value);
-            showToast(currentLanguage === 'ta' ? 'இணைதள மொழி தமிழுக்கு மாற்றப்பட்டது.' : 'Website language updated to English.', 'info');
         });
     }
 
-    // Theme Toggle Button (Light / Dark)
     const btnToggleTheme = document.getElementById('btn-toggle-theme');
     if (btnToggleTheme) {
         btnToggleTheme.addEventListener('click', () => {
             toggleTheme();
-            showToast(currentTheme === 'dark' ? '🌙 Dark Mode Activated.' : '☀️ Light Mode Activated.', 'info');
         });
     }
 
-    // Settings Modal Handlers
     const modalSettings = document.getElementById('modal-settings');
     const btnOpenSettings = document.getElementById('btn-open-settings');
     if (btnOpenSettings && modalSettings) {
@@ -2202,7 +1959,6 @@ document.addEventListener('DOMContentLoaded', () => {
         btnLoadDemoModal.addEventListener('click', () => {
             loadDemoData();
             if (modalSettings) modalSettings.classList.remove('open');
-            showToast(t('toast_demo_loaded'), 'success');
         });
     }
 
@@ -2220,19 +1976,25 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Legacy Header Demo/Reset Button Listeners (for automated test compatibility)
+    // Single click listeners for header demo/reset buttons
     const btnDemoHeader = document.getElementById('btn-demo');
     if (btnDemoHeader) {
-        btnDemoHeader.addEventListener('click', loadDemoData);
+        btnDemoHeader.addEventListener('click', () => {
+            showConfirmModal('Load Demo Data', 'Do you want to load demo benchmark data?', () => {
+                loadDemoScenario();
+            });
+        });
     }
     const btnResetHeader = document.getElementById('btn-reset');
     if (btnResetHeader) {
         btnResetHeader.addEventListener('click', () => {
-            showConfirmModal('Reset All Data', 'Are you sure you want to reset all inventory data?', resetAllData);
+            showConfirmModal('Reset Application Data', 'Are you sure you want to reset all inventory data?', () => {
+                resetAllData();
+            });
         });
     }
 
-    // Add Stock Method Choice Modal Handlers
+    // Choice Modal Controls
     const modalChoice = document.getElementById('modal-add-stock-choice');
     const btnCloseChoice = document.getElementById('btn-close-choice-modal');
     if (btnCloseChoice && modalChoice) {
@@ -2260,395 +2022,125 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Voice Language Selector Listener
-    const langSelect = document.getElementById('select-voice-lang');
-    if (langSelect) {
-        langSelect.addEventListener('change', (e) => {
-            selectedVoiceLanguage = e.target.value;
-            showToast(`Voice Assistant language updated to ${selectedVoiceLanguage === 'ta-IN' ? 'Tamil (தமிழ்)' : 'English'}.`, 'info');
-        });
-    }
-
     // Simple Mode Toggle
-    document.getElementById('btn-toggle-mode').addEventListener('click', () => {
-        isSimpleModeActive = !isSimpleModeActive;
-        const panel = document.getElementById('simple-mode-view');
-        const lbl = document.getElementById('lbl-mode');
+    const btnToggleMode = document.getElementById('btn-toggle-mode');
+    if (btnToggleMode) {
+        btnToggleMode.addEventListener('click', () => {
+            isSimpleModeActive = !isSimpleModeActive;
+            const panel = document.getElementById('simple-mode-view');
+            const lbl = document.getElementById('lbl-mode');
 
-        if (panel) panel.style.display = isSimpleModeActive ? 'block' : 'none';
-        if (lbl) lbl.textContent = isSimpleModeActive ? 'Switch to Detailed Dashboard' : 'Switch to Guided Simple Mode';
+            if (panel) panel.style.display = isSimpleModeActive ? 'block' : 'none';
+            if (lbl) lbl.textContent = isSimpleModeActive ? t('simple_mode_on') : t('simple_mode_off');
 
-        showToast(isSimpleModeActive ? '✨ Switched to Guided Simple Operating Mode (எளிய முறை).' : '📊 Switched to Detailed Operational Dashboard.', 'info');
-    });
-
-    // Voice Assistant Controls for Unified Voice Card
-    let pendingVoiceAction = null;
-
-    function updateVoiceStatus(statusText, badgeClass = 'badge-pending') {
-        const badge = document.getElementById('voice-status-indicator');
-        if (badge) {
-            badge.textContent = statusText;
-            badge.className = `badge ${badgeClass}`;
-        }
+            showToast(isSimpleModeActive ? 'Switched to Guided Simple Operating Mode.' : 'Switched to Detailed Operational Dashboard.', 'info');
+        });
     }
 
-    const btnToggleVoice = document.getElementById('btn-toggle-voice');
-    if (btnToggleVoice) {
-        btnToggleVoice.addEventListener('click', () => {
-            voiceAssistantEnabled = !voiceAssistantEnabled;
-            const lbl = document.getElementById('lbl-voice');
-            if (lbl) lbl.textContent = voiceAssistantEnabled ? `Voice: ON (${selectedVoiceLanguage === 'ta-IN' ? 'தமிழ்' : 'Eng'})` : 'Voice: OFF';
+    // Phase 1 bug fix: Wizard Submit Handler reconciles batches & daily consumption
+    const btnWizardSubmit = document.getElementById('btn-wizard-submit');
+    if (btnWizardSubmit) {
+        btnWizardSubmit.addEventListener('click', () => {
+            const centreId = document.getElementById('wizard-centre').value;
+            const medicineName = document.getElementById('wizard-medicine').value;
+            const currentStock = parseInt(document.getElementById('wizard-qty').value, 10) || 0;
+            const expiryDate = document.getElementById('wizard-expiry').value || getFutureDateString(180);
+            const lastUpdated = toLocalISO(new Date());
 
-            if (voiceAssistantEnabled) {
-                updateVoiceStatus(selectedVoiceLanguage === 'ta-IN' ? 'தயாராக உள்ளது' : 'Ready', 'badge-safe');
-                speakText(selectedVoiceLanguage === 'ta-IN' ? 'வணக்கம். மேடி-கேர் குரல் உதவி இயக்கப்பட்டது.' : 'Hello. Medi-Care voice assistant activated.', selectedVoiceLanguage);
-                showToast('🔊 Voice Assistant ON: Spoken guidance active.', 'success');
+            // Determine known daily consumption
+            let dailyCons = 0;
+            const existingItem = inventoryState.find(i => i.centreId === centreId && i.medicineName.toLowerCase().trim() === medicineName.toLowerCase().trim());
+            if (existingItem && existingItem.dailyConsumption > 0) {
+                dailyCons = existingItem.dailyConsumption;
             } else {
-                stopVoiceRecognition();
-                stopSpeaking();
-                updateVoiceStatus(selectedVoiceLanguage === 'ta-IN' ? 'முடக்கப்பட்டது' : 'Disabled', 'badge-expired');
-                const transcriptBox = document.getElementById('voice-transcript-box');
-                if (transcriptBox) transcriptBox.style.display = 'none';
-                showToast('Voice Assistant OFF.', 'info');
-            }
-        });
-    }
-
-    const btnStartVoice = document.getElementById('btn-start-voice');
-    const btnStopVoice = document.getElementById('btn-stop-voice');
-
-    if (btnStartVoice) {
-        btnStartVoice.addEventListener('click', () => {
-            if (!voiceAssistantEnabled) {
-                voiceAssistantEnabled = true;
-                const lbl = document.getElementById('lbl-voice');
-                if (lbl) lbl.textContent = `Voice: ON (${selectedVoiceLanguage === 'ta-IN' ? 'தமிழ்' : 'Eng'})`;
-            }
-
-            updateVoiceStatus(selectedVoiceLanguage === 'ta-IN' ? 'கவனிக்கிறது...' : 'Listening...', 'badge-warning');
-            if (btnStopVoice) btnStopVoice.style.display = 'inline-flex';
-            btnStartVoice.style.display = 'none';
-
-            startVoiceRecognition((transcript) => {
-                if (btnStopVoice) btnStopVoice.style.display = 'none';
-                btnStartVoice.style.display = 'inline-flex';
-                updateVoiceStatus(selectedVoiceLanguage === 'ta-IN' ? 'செயல்முறை...' : 'Processing...', 'badge-pending');
-
-                const transcriptBox = document.getElementById('voice-transcript-box');
-                const transcriptText = document.getElementById('voice-transcript-text');
-                if (transcriptBox && transcriptText) {
-                    transcriptText.textContent = `"${transcript}"`;
-                    transcriptBox.style.display = 'block';
-                }
-
-                const num = parseSpokenNumber(transcript, selectedVoiceLanguage);
-                if (num !== null) {
-                    pendingVoiceAction = { type: 'QTY', value: num, text: transcript };
-                    speakText(selectedVoiceLanguage === 'ta-IN' ? `${num} அலகுகள் அடையாளம் காணப்பட்டது. உறுதி செய்யவா?` : `Recognized quantity ${num} units. Click Confirm to apply.`, selectedVoiceLanguage);
+                const catMatch = Object.values(barcodeCatalogue).find(c => c.medicineName.toLowerCase().trim() === medicineName.toLowerCase().trim());
+                if (catMatch && catMatch.defaultDailyUse) {
+                    dailyCons = catMatch.defaultDailyUse;
                 } else {
-                    const meds = Array.from(new Set(inventoryState.map(i => i.medicineName)));
-                    const matched = meds.find(m => m.toLowerCase().includes(transcript.toLowerCase())) ||
-                                    Object.values(barcodeCatalogue).map(b => b.medicineName).find(m => m.toLowerCase().includes(transcript.toLowerCase()));
-
-                    if (matched) {
-                        pendingVoiceAction = { type: 'MEDICINE', value: matched, text: transcript };
-                        speakText(selectedVoiceLanguage === 'ta-IN' ? `${matched} தேர்வு செய்யப்பட்டது. உறுதி செய்யவா?` : `Recognized medicine ${matched}. Click Confirm to apply.`, selectedVoiceLanguage);
-                    } else {
-                        pendingVoiceAction = { type: 'TEXT', value: transcript, text: transcript };
-                        speakText(selectedVoiceLanguage === 'ta-IN' ? `சொல்: ${transcript}. உறுதி செய்யவா?` : `Recognized: ${transcript}. Click Confirm to apply.`, selectedVoiceLanguage);
-                    }
+                    const elWizardCons = document.getElementById('wizard-daily-cons');
+                    dailyCons = elWizardCons ? (parseFloat(elWizardCons.value) || 5) : 5;
                 }
-                updateVoiceStatus(selectedVoiceLanguage === 'ta-IN' ? 'தயாராக உள்ளது' : 'Ready', 'badge-safe');
-            });
-        });
-    }
-
-    if (btnStopVoice) {
-        btnStopVoice.addEventListener('click', () => {
-            stopVoiceRecognition();
-            stopSpeaking();
-            if (btnStartVoice) btnStartVoice.style.display = 'inline-flex';
-            btnStopVoice.style.display = 'none';
-            updateVoiceStatus(selectedVoiceLanguage === 'ta-IN' ? 'தயாராக உள்ளது' : 'Ready', 'badge-safe');
-            showToast('Voice listening stopped.', 'info');
-        });
-    }
-
-    const btnVoiceConfirm = document.getElementById('btn-voice-confirm');
-    if (btnVoiceConfirm) {
-        btnVoiceConfirm.addEventListener('click', () => {
-            if (!pendingVoiceAction) {
-                showToast('No pending voice input to confirm.', 'info');
-                return;
             }
 
-            if (pendingVoiceAction.type === 'QTY') {
-                const qtyInput = document.getElementById('wizard-qty') || document.getElementById('modal-stock-qty');
-                if (qtyInput) qtyInput.value = pendingVoiceAction.value;
-                showToast(`Applied voice quantity: ${pendingVoiceAction.value} units`, 'success');
-                speakText(selectedVoiceLanguage === 'ta-IN' ? `${pendingVoiceAction.value} அலகுகள் சேர்க்கப்பட்டது.` : `Applied quantity ${pendingVoiceAction.value} units.`, selectedVoiceLanguage);
-            } else if (pendingVoiceAction.type === 'MEDICINE') {
-                const medSelect = document.getElementById('wizard-medicine') || document.getElementById('modal-medicine');
-                if (medSelect) medSelect.value = pendingVoiceAction.value;
-                showToast(`Applied voice medicine: ${pendingVoiceAction.value}`, 'success');
-                speakText(selectedVoiceLanguage === 'ta-IN' ? `${pendingVoiceAction.value} தேர்ந்தெடுக்கப்பட்டது.` : `Selected medicine ${pendingVoiceAction.value}.`, selectedVoiceLanguage);
+            const existingIdx = inventoryState.findIndex(i =>
+                i.centreId === centreId &&
+                i.medicineName.toLowerCase().trim() === medicineName.toLowerCase().trim()
+            );
+
+            if (existingIdx >= 0) {
+                inventoryState[existingIdx].currentStock = currentStock;
+                inventoryState[existingIdx].lastUpdated = lastUpdated;
+                if (dailyCons > 0) inventoryState[existingIdx].dailyConsumption = dailyCons;
+            } else {
+                inventoryState.push({
+                    id: `INV-${Date.now()}`,
+                    centreId,
+                    medicineName,
+                    currentStock,
+                    dailyConsumption: dailyCons || 5,
+                    targetCoverageDays: 30,
+                    lastUpdated,
+                    lastTransferAt: null
+                });
             }
 
-            const transcriptBox = document.getElementById('voice-transcript-box');
-            if (transcriptBox) transcriptBox.style.display = 'none';
-            pendingVoiceAction = null;
-        });
-    }
-
-    const btnVoiceCancel = document.getElementById('btn-voice-cancel');
-    if (btnVoiceCancel) {
-        btnVoiceCancel.addEventListener('click', () => {
-            pendingVoiceAction = null;
-            const transcriptBox = document.getElementById('voice-transcript-box');
-            if (transcriptBox) transcriptBox.style.display = 'none';
-            showToast('Voice action cancelled.', 'info');
-        });
-    }
-
-    const btnReplayVoice = document.getElementById('btn-replay-voice');
-    if (btnReplayVoice) {
-        btnReplayVoice.addEventListener('click', () => {
-            if (lastSpokenText) speakText(lastSpokenText, selectedVoiceLanguage);
-            else speakText(selectedVoiceLanguage === 'ta-IN' ? 'மேடி-கேர் குரல் உதவிக்கு நல்வரவு.' : 'Welcome to Medi-Care voice guidance.', selectedVoiceLanguage);
-        });
-    }
-
-    // Simple Action Cards Handlers
-    document.getElementById('btn-simple-wizard').addEventListener('click', openSimpleWizardModal);
-
-    document.getElementById('btn-simple-expiry').addEventListener('click', () => {
-        const box = document.getElementById('simple-mode-content');
-        const title = document.getElementById('simple-box-title');
-        const body = document.getElementById('simple-box-body');
-
-        title.textContent = '⏳ Medicine Expiry & Usability Check';
-        let html = '<div style="display:flex; flex-direction:column; gap:0.5rem;">';
-        batchState.forEach(b => {
-            const daysLeft = getDaysUntilExpiry(b.expiryDate);
-            let badgeClass = daysLeft < 0 ? 'badge-expired' : (daysLeft <= 60 ? 'badge-near-expiry' : 'badge-safe');
-            let statusText = daysLeft < 0 ? `EXPIRED ${Math.abs(daysLeft)} days ago (EXCLUDED)` : (daysLeft <= 60 ? `Expires in ${daysLeft} days (Use First)` : `USABLE (${daysLeft} days left)`);
-
-            html += `
-                <div style="background:var(--color-surface-alt); padding:0.75rem; border:1px solid var(--color-border); border-radius:6px; display:flex; justify-content:space-between; align-items:center;">
-                    <div>
-                        <strong>${esc(b.medicineName)}</strong> - <code>${esc(b.batchNumber)}</code> (${esc(b.centreId)})<br>
-                        <small style="color:var(--color-text-muted);">Qty: ${b.quantity} units | Expiry: ${esc(formatDate(b.expiryDate))}</small>
-                    </div>
-                    <span class="badge ${badgeClass}">${statusText}</span>
-                </div>
-            `;
-        });
-        html += '</div>';
-        body.innerHTML = html;
-        box.style.display = 'block';
-    });
-
-    document.getElementById('btn-simple-alerts').addEventListener('click', () => {
-        const box = document.getElementById('simple-mode-content');
-        const title = document.getElementById('simple-box-title');
-        const body = document.getElementById('simple-box-body');
-
-        title.textContent = '⚠️ Plain-Language Medicine Alerts';
-        const processed = inventoryState.map(processForecastItem);
-        const criticals = processed.filter(i => i.status === 'CRITICAL' || i.status === 'WARNING' || i.status === 'OUTDATED');
-
-        let html = '<div style="display:flex; flex-direction:column; gap:0.65rem;">';
-        if (criticals.length === 0) {
-            html += '<p style="color:var(--color-safe); font-weight:700;"><i class="fa-solid fa-circle-check"></i> All medicine stock levels operate safely!</p>';
-        } else {
-            criticals.forEach(i => {
-                html += `
-                    <div style="background:var(--color-critical-bg); border:1px solid var(--color-critical-border); padding:0.85rem; border-radius:6px; display:flex; justify-content:space-between; align-items:center;">
-                        <div>
-                            <strong style="color:var(--color-critical);">${esc(i.centreId)} — ${esc(i.medicineName)}</strong><br>
-                            <span style="color:var(--color-text-main);">${esc(i.riskReason)}</span>
-                        </div>
-                        <button class="btn btn-outline btn-sm btn-speak-alert" data-text="${esc(i.riskReason)}">
-                            <i class="fa-solid fa-volume-high"></i> Listen (கேளுங்கள்)
-                        </button>
-                    </div>
-                `;
-            });
-        }
-        html += '</div>';
-        body.innerHTML = html;
-        box.style.display = 'block';
-
-        document.querySelectorAll('.btn-speak-alert').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                speakText(e.currentTarget.dataset.text);
-            });
-        });
-    });
-
-    document.getElementById('btn-simple-transfers').addEventListener('click', () => {
-        switchTab('tab-redistribution');
-        showToast('Navigated to Inter-PHC Safe Surplus Transfer Recommendations.', 'info');
-    });
-
-    document.getElementById('btn-close-simple-box').addEventListener('click', () => {
-        document.getElementById('simple-mode-content').style.display = 'none';
-    });
-
-    // Guided 3-Step Wizard Navigation Controls
-    document.getElementById('btn-wizard-next').addEventListener('click', () => {
-        if (wizardCurrentStep < 3) {
-            wizardCurrentStep++;
-            updateWizardStepView();
-        }
-    });
-
-    document.getElementById('btn-wizard-back').addEventListener('click', () => {
-        if (wizardCurrentStep > 1) {
-            wizardCurrentStep--;
-            updateWizardStepView();
-        }
-    });
-
-    document.getElementById('btn-close-wizard-modal').addEventListener('click', closeSimpleWizardModal);
-
-    // Quantity Stepper Buttons
-    document.getElementById('btn-qty-minus10').addEventListener('click', () => {
-        const el = document.getElementById('wizard-qty');
-        el.value = Math.max(0, parseInt(el.value, 10) - 10);
-    });
-    document.getElementById('btn-qty-minus1').addEventListener('click', () => {
-        const el = document.getElementById('wizard-qty');
-        el.value = Math.max(0, parseInt(el.value, 10) - 1);
-    });
-    document.getElementById('btn-qty-plus1').addEventListener('click', () => {
-        const el = document.getElementById('wizard-qty');
-        el.value = parseInt(el.value, 10) + 1;
-    });
-    document.getElementById('btn-qty-plus10').addEventListener('click', () => {
-        const el = document.getElementById('wizard-qty');
-        el.value = parseInt(el.value, 10) + 10;
-    });
-    document.getElementById('btn-qty-plus50').addEventListener('click', () => {
-        const el = document.getElementById('wizard-qty');
-        el.value = parseInt(el.value, 10) + 50;
-    });
-
-    // Expiry Presets
-    document.getElementById('preset-3m').addEventListener('click', () => {
-        document.getElementById('wizard-expiry').value = getFutureDateString(90);
-    });
-    document.getElementById('preset-6m').addEventListener('click', () => {
-        document.getElementById('wizard-expiry').value = getFutureDateString(180);
-    });
-    document.getElementById('preset-1y').addEventListener('click', () => {
-        document.getElementById('wizard-expiry').value = getFutureDateString(365);
-    });
-
-    // Barcode Scanner Modal Launch & Teardown
-    document.getElementById('btn-wizard-scan').addEventListener('click', () => {
-        document.getElementById('modal-barcode-scanner').classList.add('open');
-        startCameraScanner();
-    });
-
-    const btnStopCam = document.getElementById('btn-stop-camera');
-    if (btnStopCam) {
-        btnStopCam.addEventListener('click', stopCameraScanner);
-    }
-
-    document.getElementById('btn-close-barcode-modal').addEventListener('click', () => {
-        stopCameraScanner();
-        document.getElementById('modal-barcode-scanner').classList.remove('open');
-    });
-
-    document.getElementById('btn-lookup-manual-barcode').addEventListener('click', () => {
-        const code = document.getElementById('input-manual-barcode').value.trim();
-        handleBarcodeDetected(code);
-    });
-
-    // Wizard Submit Handler
-    document.getElementById('btn-wizard-submit').addEventListener('click', () => {
-        const centreId = document.getElementById('wizard-centre').value;
-        const medicineName = document.getElementById('wizard-medicine').value;
-        const currentStock = parseInt(document.getElementById('wizard-qty').value, 10) || 0;
-        const expiryDate = document.getElementById('wizard-expiry').value || getFutureDateString(180);
-        const lastUpdated = toLocalISO(new Date());
-
-        const existingIdx = inventoryState.findIndex(i =>
-            i.centreId === centreId &&
-            i.medicineName.toLowerCase().trim() === medicineName.toLowerCase().trim()
-        );
-
-        if (existingIdx >= 0) {
-            inventoryState[existingIdx].currentStock = currentStock;
-            inventoryState[existingIdx].lastUpdated = lastUpdated;
-        } else {
-            inventoryState.push({
-                id: `INV-${Date.now()}`,
+            // Batch Reconciliation: replace non-expired batches for this item with single reconciled batch
+            batchState = batchState.filter(b => !(b.centreId === centreId && b.medicineName.toLowerCase().trim() === medicineName.toLowerCase().trim() && getDaysUntilExpiry(b.expiryDate) >= 0));
+            batchState.push({
+                id: `BAT-${Date.now()}`,
+                batchNumber: `WIZ-BATCH-${Math.floor(Math.random() * 1000)}`,
                 centreId,
                 medicineName,
-                currentStock,
-                dailyConsumption: 5,
-                targetCoverageDays: 30,
-                lastUpdated,
-                lastTransferAt: null
+                quantity: currentStock,
+                expiryDate
             });
-        }
 
-        batchState.push({
-            id: `BAT-${Date.now()}`,
-            batchNumber: `WIZ-BATCH-${Math.floor(Math.random() * 1000)}`,
-            centreId,
-            medicineName,
-            quantity: currentStock,
-            expiryDate
-        });
+            OutboxQueue.enqueue('STOCK_UPSERT', { centreId, medicineName, currentStock, dailyConsumption: dailyCons });
 
-        const isOnline = (typeof navigator !== 'undefined' && 'onLine' in navigator) ? navigator.onLine : true;
-        if (!isOnline) {
-            syncQueueState.push({ type: 'STOCK_UPDATE', centreId, medicineName, currentStock, qty: currentStock });
-        }
-
-        saveStateToStorage();
-        populateDropdowns();
-        renderDashboard();
-        closeSimpleWizardModal();
-
-        showToast(`⚡ Stock record saved successfully for ${medicineName} at ${centreId}!`, 'success');
-    });
-
-    // Existing Controls
-    document.getElementById('input-lead-time').addEventListener('input', (e) => {
-        const val = parseInt(e.target.value, 10);
-        if (!isNaN(val) && val >= 1 && val <= 90) {
-            leadTimeDays = val;
+            saveStateToStorage();
+            populateDropdowns();
             renderDashboard();
+
+            const wizardModal = document.getElementById('modal-wizard');
+            if (wizardModal) wizardModal.classList.remove('open');
+
+            showToast(`Stock record saved for ${medicineName} at ${centreId}.`, 'success');
+        });
+    }
+
+    // Filter Listeners
+    ['filter-search', 'filter-centre', 'filter-medicine', 'filter-urgency'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener('input', renderDashboard);
+            el.addEventListener('change', renderDashboard);
         }
     });
 
-    document.getElementById('filter-search').addEventListener('input', renderDashboard);
-    document.getElementById('filter-centre').addEventListener('change', renderDashboard);
-    document.getElementById('filter-medicine').addEventListener('change', renderDashboard);
-    document.getElementById('filter-urgency').addEventListener('change', renderDashboard);
-
-    document.getElementById('btn-demo').addEventListener('click', () => {
-        showConfirmModal('Load Demo Data', 'Do you want to load demo data?', () => {
-            loadDemoScenario();
+    const elLeadTime = document.getElementById('input-lead-time');
+    if (elLeadTime) {
+        elLeadTime.addEventListener('input', (e) => {
+            const val = parseInt(e.target.value, 10);
+            if (!isNaN(val) && val >= 1 && val <= 90) {
+                leadTimeDays = val;
+                renderDashboard();
+            }
         });
-    });
+    }
 
-    document.getElementById('btn-reset').addEventListener('click', () => {
-        showConfirmModal('Reset Application Data', 'Are you sure you want to reset all inventory, batch, and pending approval records to initial factory seed?', () => {
-            resetData();
+    // Confirmation Modal Listeners
+    const btnActionConfirm = document.getElementById('btn-action-confirm');
+    if (btnActionConfirm) {
+        btnActionConfirm.addEventListener('click', () => {
+            if (pendingConfirmAction) pendingConfirmAction();
+            closeConfirmModal();
         });
-    });
+    }
+    const btnCancelConfirm = document.getElementById('btn-cancel-confirm');
+    if (btnCancelConfirm) btnCancelConfirm.addEventListener('click', closeConfirmModal);
 
-    document.getElementById('btn-action-confirm').addEventListener('click', () => {
-        if (pendingConfirmAction) pendingConfirmAction();
-        closeConfirmModal();
-    });
-    document.getElementById('btn-cancel-confirm').addEventListener('click', closeConfirmModal);
-    document.getElementById('btn-close-confirm').addEventListener('click', closeConfirmModal);
+    const btnCloseConfirm = document.getElementById('btn-close-confirm');
+    if (btnCloseConfirm) btnCloseConfirm.addEventListener('click', closeConfirmModal);
 
     document.querySelectorAll('.nav-tab').forEach(btn => {
         btn.addEventListener('click', () => switchTab(btn.dataset.tab));
@@ -2660,265 +2152,267 @@ document.addEventListener('DOMContentLoaded', () => {
         brandTitle.addEventListener('click', () => switchTab('tab-overview'));
     }
 
-    // Request Transfer Modal Listeners
-    document.getElementById('btn-close-req-modal').addEventListener('click', closeRequestTransferModal);
-    document.getElementById('btn-cancel-req').addEventListener('click', closeRequestTransferModal);
-    document.getElementById('btn-submit-req').addEventListener('click', () => {
-        if (!activeRequestData) return;
-        const { donor, recipient, medicine, qty } = activeRequestData;
+    // Request Transfer Modal Handlers
+    const btnCloseReq = document.getElementById('btn-close-req-modal');
+    if (btnCloseReq) btnCloseReq.addEventListener('click', closeRequestTransferModal);
 
-        const isDuplicate = pendingRequestsState.some(r =>
-            r.status === 'PENDING' &&
-            r.donor === donor &&
-            r.recipient === recipient &&
-            r.medicine === medicine
-        );
+    const btnCancelReq = document.getElementById('btn-cancel-req');
+    if (btnCancelReq) btnCancelReq.addEventListener('click', closeRequestTransferModal);
 
-        if (isDuplicate) {
-            showToast("A request for this transfer is already pending approval.", 'info');
+    const btnSubmitReq = document.getElementById('btn-submit-req');
+    if (btnSubmitReq) {
+        btnSubmitReq.addEventListener('click', () => {
+            if (!activeRequestData) return;
+            const { donor, recipient, medicine, qty, impact } = activeRequestData;
+
+            const isDuplicate = pendingRequestsState.some(r =>
+                r.status === 'PENDING' &&
+                r.donor === donor &&
+                r.recipient === recipient &&
+                r.medicine === medicine
+            );
+
+            if (isDuplicate) {
+                showToast("A request for this transfer is already pending approval.", 'info');
+                closeRequestTransferModal();
+                return;
+            }
+
+            const newReq = {
+                id: `REQ-${Date.now()}`,
+                donor,
+                recipient,
+                medicine,
+                qty,
+                impact,
+                requestedAt: `${toLocalISO(new Date())} ${new Date().toLocaleTimeString('en-GB')}`,
+                requestedBy: 'System Recommendation',
+                status: 'PENDING'
+            };
+
+            pendingRequestsState.unshift(newReq);
+            logAuditAction('Requested', 'System Recommendation', `${donor} → ${recipient}`, medicine, qty, 'Submitted for Medical Officer approval');
+            OutboxQueue.enqueue('TRANSFER_REQUEST', newReq);
+            saveStateToStorage();
             closeRequestTransferModal();
-            return;
-        }
-
-        const impact = computeTransferImpact(donor, recipient, medicine, qty);
-
-        const newReq = {
-            id: `REQ-${Date.now()}`,
-            donor,
-            recipient,
-            medicine,
-            qty,
-            impact,
-            requestedAt: `${toLocalISO(new Date())} ${new Date().toLocaleTimeString('en-GB')}`,
-            requestedBy: 'System Recommendation',
-            status: 'PENDING'
-        };
-
-        pendingRequestsState.unshift(newReq);
-        logAuditAction('Requested', 'System Recommendation', `${donor} → ${recipient}`, medicine, qty, 'Submitted for Medical Officer approval');
-        saveStateToStorage();
-        closeRequestTransferModal();
-        renderDashboard();
-        showToast(`Transfer request submitted for ${qty} units of ${medicine} (${donor} → ${recipient}). Pending Medical Officer approval.`, 'info');
-    });
-
-    // Approve Modal Listeners
-    document.getElementById('btn-close-approve-modal').addEventListener('click', closeApproveModal);
-    document.getElementById('btn-cancel-approve').addEventListener('click', closeApproveModal);
-    document.getElementById('form-approve-transfer').addEventListener('submit', (e) => {
-        e.preventDefault();
-        if (!activePendingRequestToApprove) return;
-
-        const officerName = document.getElementById('input-officer-name').value.trim();
-        const pin = document.getElementById('input-officer-pin').value.trim();
-        const note = document.getElementById('input-approve-note').value.trim();
-
-        if (!officerName) {
-            showToast('Validation Error: Please enter Medical Officer Name.', 'error');
-            return;
-        }
-
-        if (pin !== '1234') {
-            showToast('Authorization Error: Invalid PIN! (Demo PIN is 1234).', 'error');
-            return;
-        }
-
-        const req = activePendingRequestToApprove;
-
-        const donorItem = inventoryState.find(i => i.centreId === req.donor && i.medicineName === req.medicine);
-        const donorProcessed = donorItem ? processForecastItem(donorItem) : null;
-        const { validBatchQty } = getItemBatchAnalysis(req.donor, req.medicine);
-
-        if (!donorProcessed || donorProcessed.isOutdated || donorProcessed.donorSurplus < req.qty || validBatchQty < req.qty) {
-            req.status = 'INVALID';
-            logAuditAction('Invalid', officerName, `${req.donor} → ${req.recipient}`, req.medicine, req.qty, `Approval failed re-validation: Donor surplus or valid batch stock insufficient.`);
-            saveStateToStorage();
-            closeApproveModal();
             renderDashboard();
-            showToast(`Approval failed: Donor safe surplus or valid batch stock is no longer sufficient. Request marked INVALID.`, 'error');
-            return;
-        }
+            showToast(t('toast_transfer_requested'), 'info');
+        });
+    }
 
-        const success = executeApprovedTransfer(req.donor, req.recipient, req.medicine, req.qty);
-        if (success) {
-            req.status = 'APPROVED';
-            logAuditAction('Approved', officerName, `${req.donor} → ${req.recipient}`, req.medicine, req.qty, note || 'Transfer approved by Medical Officer');
+    // Approval Modal Handlers
+    const btnCloseApprove = document.getElementById('btn-close-approve-modal');
+    if (btnCloseApprove) btnCloseApprove.addEventListener('click', closeApproveModal);
+
+    const btnCancelApprove = document.getElementById('btn-cancel-approve');
+    if (btnCancelApprove) btnCancelApprove.addEventListener('click', closeApproveModal);
+
+    const formApprove = document.getElementById('form-approve-transfer');
+    if (formApprove) {
+        formApprove.addEventListener('submit', (e) => {
+            e.preventDefault();
+            if (!activePendingRequestToApprove) return;
+
+            const officerName = document.getElementById('input-officer-name').value.trim();
+            const pin = document.getElementById('input-officer-pin').value.trim();
+            const note = document.getElementById('input-approve-note').value.trim();
+
+            if (!officerName) {
+                showToast('Validation Error: Please enter Medical Officer Name.', 'error');
+                return;
+            }
+
+            if (pin !== '1234') {
+                showToast('Authorization Error: Invalid PIN! (Demo PIN is 1234).', 'error');
+                return;
+            }
+
+            const req = activePendingRequestToApprove;
+            const donorItem = inventoryState.find(i => i.centreId === req.donor && i.medicineName === req.medicine);
+            const donorProcessed = donorItem ? processForecastItem(donorItem) : null;
+            const { validBatchQty } = getItemBatchAnalysis(req.donor, req.medicine);
+
+            if (!donorProcessed || donorProcessed.isOutdated || donorProcessed.donorSurplus < req.qty || validBatchQty < req.qty) {
+                req.status = 'INVALID';
+                logAuditAction('Invalid', officerName, `${req.donor} → ${req.recipient}`, req.medicine, req.qty, 'Approval failed re-validation.');
+                saveStateToStorage();
+                closeApproveModal();
+                renderDashboard();
+                showToast('Approval failed: Donor safe surplus or valid batch stock is insufficient.', 'error');
+                return;
+            }
+
+            const success = executeApprovedTransfer(req.donor, req.recipient, req.medicine, req.qty);
+            if (success) {
+                req.status = 'APPROVED';
+                logAuditAction('Approved', officerName, `${req.donor} → ${req.recipient}`, req.medicine, req.qty, note || 'Transfer approved by Medical Officer');
+                saveStateToStorage();
+                closeApproveModal();
+                renderDashboard();
+                showToast(t('toast_transfer_approved'), 'success');
+            }
+        });
+    }
+
+    // Rejection Modal Handlers
+    const btnCloseReject = document.getElementById('btn-close-reject-modal');
+    if (btnCloseReject) btnCloseReject.addEventListener('click', closeRejectModal);
+
+    const btnCancelReject = document.getElementById('btn-cancel-reject');
+    if (btnCancelReject) btnCancelReject.addEventListener('click', closeRejectModal);
+
+    const formReject = document.getElementById('form-reject-transfer');
+    if (formReject) {
+        formReject.addEventListener('submit', (e) => {
+            e.preventDefault();
+            if (!activePendingRequestToReject) return;
+
+            const reason = document.getElementById('input-reject-reason').value.trim();
+            if (!reason) {
+                showToast('Validation Error: Please enter a rejection reason.', 'error');
+                return;
+            }
+
+            const req = activePendingRequestToReject;
+            req.status = 'REJECTED';
+            logAuditAction('Rejected', 'Medical Officer', `${req.donor} → ${req.recipient}`, req.medicine, req.qty, `Reason: ${reason}`);
+            OutboxQueue.enqueue('TRANSFER_REJECT', { reqId: req.id, reason });
+
             saveStateToStorage();
-            closeApproveModal();
+            closeRejectModal();
             renderDashboard();
-            showToast(`⚡ Transfer Approved! ${req.qty} units of ${req.medicine} moved from ${req.donor} to ${req.recipient}.`, 'success');
-        }
-    });
+            showToast(t('toast_transfer_rejected'), 'info');
+        });
+    }
 
-    // Reject Modal Listeners
-    document.getElementById('btn-close-reject-modal').addEventListener('click', closeRejectModal);
-    document.getElementById('btn-cancel-reject').addEventListener('click', closeRejectModal);
-    document.getElementById('form-reject-transfer').addEventListener('submit', (e) => {
-        e.preventDefault();
-        if (!activePendingRequestToReject) return;
+    // Barcode Lookup Controls
+    const btnStopCam = document.getElementById('btn-stop-camera');
+    if (btnStopCam) btnStopCam.addEventListener('click', stopCameraScanner);
 
-        const reason = document.getElementById('input-reject-reason').value.trim();
-        if (!reason) {
-            showToast('Validation Error: Please enter a rejection reason.', 'error');
-            return;
-        }
+    const btnCloseBarModal = document.getElementById('btn-close-barcode-modal');
+    if (btnCloseBarModal) {
+        btnCloseBarModal.addEventListener('click', () => {
+            stopCameraScanner();
+            document.getElementById('modal-barcode-scanner').classList.remove('open');
+        });
+    }
 
-        const req = activePendingRequestToReject;
-        req.status = 'REJECTED';
-        logAuditAction('Rejected', 'Medical Officer', `${req.donor} → ${req.recipient}`, req.medicine, req.qty, `Reason: ${reason}`);
+    const btnLookupBar = document.getElementById('btn-lookup-manual-barcode');
+    if (btnLookupBar) {
+        btnLookupBar.addEventListener('click', () => {
+            const code = document.getElementById('input-manual-barcode').value.trim();
+            handleBarcodeDetected(code);
+        });
+    }
 
-        saveStateToStorage();
-        closeRejectModal();
-        renderDashboard();
-        showToast(`Transfer request rejected: ${reason}`, 'info');
-    });
-
-    // Simulator Listeners
-    ['sim-demand-multiplier', 'sim-delay-days', 'sim-supply-shock', 'sim-assume-transfers'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) {
-            el.addEventListener('input', () => {
-                const processedList = inventoryState.map(processForecastItem);
-                renderSimulator(processedList);
-            });
-            el.addEventListener('change', () => {
-                const processedList = inventoryState.map(processForecastItem);
-                renderSimulator(processedList);
-            });
-        }
-    });
-
-    document.getElementById('btn-reset-sim').addEventListener('click', () => {
-        document.getElementById('sim-demand-multiplier').value = '1.0';
-        document.getElementById('sim-delay-days').value = '0';
-        document.getElementById('sim-supply-shock').value = '0';
-        document.getElementById('sim-assume-transfers').checked = false;
-        const processedList = inventoryState.map(processForecastItem);
-        renderSimulator(processedList);
-        showToast('Simulator parameters reset to baseline.', 'info');
-    });
-
-    // Inventory Modal Controls
-    const modalStock = document.getElementById('modal-stock');
-    const btnOpenStockModal = document.getElementById('btn-add-modal');
+    // Inventory Form Submit Handler
     const formStock = document.getElementById('form-stock');
+    if (formStock) {
+        formStock.addEventListener('submit', (e) => {
+            e.preventDefault();
 
+            const centreId = document.getElementById('modal-centre').value;
+            const medicineName = document.getElementById('modal-medicine').value.trim();
+            const currentStock = parseFloat(document.getElementById('modal-stock-qty').value);
+            const dailyConsumption = parseFloat(document.getElementById('modal-daily-cons').value);
+            const targetCoverageDays = parseInt(document.getElementById('modal-target-days').value, 10);
+            const lastUpdated = document.getElementById('modal-last-updated').value;
+
+            if (!medicineName || isNaN(currentStock) || currentStock < 0 || isNaN(dailyConsumption) || dailyConsumption < 0 || isNaN(targetCoverageDays) || targetCoverageDays <= 0 || !lastUpdated) {
+                showToast('Validation Error: Please enter valid non-negative numbers.', 'error');
+                return;
+            }
+
+            const existingIdx = inventoryState.findIndex(i =>
+                i.centreId === centreId &&
+                i.medicineName.toLowerCase().trim() === medicineName.toLowerCase().trim()
+            );
+
+            if (existingIdx >= 0) {
+                inventoryState[existingIdx].currentStock = currentStock;
+                inventoryState[existingIdx].dailyConsumption = dailyConsumption;
+                inventoryState[existingIdx].targetCoverageDays = targetCoverageDays;
+                inventoryState[existingIdx].lastUpdated = lastUpdated;
+                showToast(`Updated stock record for ${medicineName} at ${centreId}.`, 'success');
+            } else {
+                inventoryState.push({
+                    id: `INV-${Date.now()}`,
+                    centreId,
+                    medicineName,
+                    currentStock,
+                    dailyConsumption,
+                    targetCoverageDays,
+                    lastUpdated,
+                    lastTransferAt: null
+                });
+                showToast(`Added new stock record for ${medicineName} at ${centreId}.`, 'success');
+            }
+
+            OutboxQueue.enqueue('STOCK_UPSERT', { centreId, medicineName, currentStock, dailyConsumption, targetCoverageDays, lastUpdated });
+
+            saveStateToStorage();
+            populateDropdowns();
+            renderDashboard();
+
+            const modalStock = document.getElementById('modal-stock');
+            if (modalStock) modalStock.classList.remove('open');
+            formStock.reset();
+        });
+    }
+
+    // Add Stock Modal Open Button
+    const btnOpenStockModal = document.getElementById('btn-add-modal');
     if (btnOpenStockModal) {
         btnOpenStockModal.addEventListener('click', () => {
             const choiceModal = document.getElementById('modal-add-stock-choice');
             if (choiceModal) {
                 choiceModal.classList.add('open');
-            } else if (modalStock) {
-                modalStock.classList.add('open');
-                document.getElementById('modal-last-updated').value = toLocalISO(new Date());
+            } else {
+                const modalStock = document.getElementById('modal-stock');
+                if (modalStock) {
+                    modalStock.classList.add('open');
+                    document.getElementById('modal-last-updated').value = toLocalISO(new Date());
+                }
             }
         });
     }
 
-    document.querySelectorAll('#modal-stock .btn-close-modal').forEach(btn => {
-        btn.addEventListener('click', () => {
-            modalStock.classList.remove('open');
-            formStock.reset();
-        });
-    });
+    // Batch Form Submit Handler
+    const formBatch = document.getElementById('form-batch');
+    if (formBatch) {
+        formBatch.addEventListener('submit', (e) => {
+            e.preventDefault();
 
-    formStock.addEventListener('submit', (e) => {
-        e.preventDefault();
+            const centreId = document.getElementById('modal-batch-centre').value;
+            const medicineName = document.getElementById('modal-batch-medicine').value;
+            const batchNumber = document.getElementById('modal-batch-num').value.trim();
+            const quantity = parseInt(document.getElementById('modal-batch-qty').value, 10);
+            const expiryDate = document.getElementById('modal-batch-expiry').value;
 
-        const centreId = document.getElementById('modal-centre').value;
-        const medicineName = document.getElementById('modal-medicine').value.trim();
-        const currentStock = parseFloat(document.getElementById('modal-stock-qty').value);
-        const dailyConsumption = parseFloat(document.getElementById('modal-daily-cons').value);
-        const targetCoverageDays = parseInt(document.getElementById('modal-target-days').value, 10);
-        const lastUpdated = document.getElementById('modal-last-updated').value;
+            if (!batchNumber || isNaN(quantity) || quantity <= 0 || !expiryDate) {
+                showToast('Validation Error: Please provide a valid batch number and quantity.', 'error');
+                return;
+            }
 
-        if (!medicineName || isNaN(currentStock) || currentStock < 0 || isNaN(dailyConsumption) || dailyConsumption < 0 || isNaN(targetCoverageDays) || targetCoverageDays <= 0 || !lastUpdated) {
-            showToast('Validation Error: Please enter valid non-negative numbers and a valid date.', 'error');
-            return;
-        }
-
-        const existingIdx = inventoryState.findIndex(i =>
-            i.centreId === centreId &&
-            i.medicineName.toLowerCase().trim() === medicineName.toLowerCase().trim()
-        );
-
-        if (existingIdx >= 0) {
-            inventoryState[existingIdx].currentStock = currentStock;
-            inventoryState[existingIdx].dailyConsumption = dailyConsumption;
-            inventoryState[existingIdx].targetCoverageDays = targetCoverageDays;
-            inventoryState[existingIdx].lastUpdated = lastUpdated;
-            showToast(`Updated stock record for ${medicineName} at ${centreId}.`, 'success');
-        } else {
-            inventoryState.push({
-                id: `INV-${Date.now()}`,
+            batchState.push({
+                id: `BAT-${Date.now()}`,
+                batchNumber,
                 centreId,
                 medicineName,
-                currentStock,
-                dailyConsumption,
-                targetCoverageDays,
-                lastUpdated,
-                lastTransferAt: null
+                quantity,
+                expiryDate
             });
-            showToast(`Added new stock record for ${medicineName} at ${centreId}.`, 'success');
-        }
 
-        saveStateToStorage();
-        populateDropdowns();
-        renderDashboard();
-        modalStock.classList.remove('open');
-        formStock.reset();
-    });
+            OutboxQueue.enqueue('BATCH_ADD', { batchNumber, centreId, medicineName, quantity, expiryDate });
 
-    // Batch Modal Controls
-    const modalBatch = document.getElementById('modal-batch');
-    const btnOpenBatchModal = document.getElementById('btn-add-batch-modal');
-    const formBatch = document.getElementById('form-batch');
+            saveStateToStorage();
+            renderDashboard();
 
-    if (btnOpenBatchModal) {
-        btnOpenBatchModal.addEventListener('click', () => {
-            modalBatch.classList.add('open');
-            document.getElementById('modal-batch-expiry').value = getFutureDateString(180);
+            const modalBatch = document.getElementById('modal-batch');
+            if (modalBatch) modalBatch.classList.remove('open');
+            formBatch.reset();
+
+            showToast(`Registered batch ${batchNumber} (${quantity} units) for ${medicineName}.`, 'success');
         });
     }
-
-    ['btn-close-batch-modal', 'btn-cancel-batch'].forEach(id => {
-        const btn = document.getElementById(id);
-        if (btn) {
-            btn.addEventListener('click', () => {
-                modalBatch.classList.remove('open');
-                formBatch.reset();
-            });
-        }
-    });
-
-    formBatch.addEventListener('submit', (e) => {
-        e.preventDefault();
-
-        const centreId = document.getElementById('modal-batch-centre').value;
-        const medicineName = document.getElementById('modal-batch-medicine').value;
-        const batchNumber = document.getElementById('modal-batch-num').value.trim();
-        const quantity = parseInt(document.getElementById('modal-batch-qty').value, 10);
-        const expiryDate = document.getElementById('modal-batch-expiry').value;
-
-        if (!batchNumber || isNaN(quantity) || quantity <= 0 || !expiryDate) {
-            showToast('Validation Error: Please provide a valid batch number, positive quantity, and expiry date.', 'error');
-            return;
-        }
-
-        batchState.push({
-            id: `BAT-${Date.now()}`,
-            batchNumber,
-            centreId,
-            medicineName,
-            quantity,
-            expiryDate
-        });
-
-        saveStateToStorage();
-        renderDashboard();
-        modalBatch.classList.remove('open');
-        formBatch.reset();
-
-        showToast(`Registered batch ${batchNumber} (${quantity} units) for ${medicineName}.`, 'success');
-    });
 });
